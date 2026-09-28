@@ -15,16 +15,26 @@ A small native Windows application forked from [upstream-ray/codex-usage-monitor
 
 ## Dynamic quota colors
 
-Each Codex row (5h and 7d) selects its bar fill and value-text color independently from **remaining** quota:
+Each Codex row (5h and 7d) compares **remaining quota with the precise time until its own reset**, independently of the selected display mode. For the weekly cycle:
 
-| Color | Remaining quota | Dark theme | Light theme |
+`quotaDaysRemaining = remainingPercent / 100 * 7`
+
+`bufferDays = quotaDaysRemaining - secondsUntilReset / 86400`
+
+| Color | Weekly buffer (days) | Dark theme | Light theme |
 |---|---|---|---|
-| Cyan | 70–100% | `#22D3EE` | `#0E7490` |
-| Blue | 40–69% | `#3B82F6` | `#1D4ED8` |
-| Amber | 20–39% | `#F59E0B` | `#92400E` |
-| Red | 0–19% | `#EF4444` | `#B91C1C` |
+| Dark green | ≥ +1.5 | `#22C55E` | `#166534` |
+| Light green | ≥ 0 and < +1.5 | `#86EFAC` | `#15803D` |
+| Light yellow | ≥ −0.5 and < 0 | `#FEF08A` | `#A16207` |
+| Dark yellow | ≥ −1 and < −0.5 | `#EAB308` | `#854D0E` |
+| Light red | ≥ −2 and < −1 | `#FCA5A5` | `#DC2626` |
+| Dark red | < −2 | `#EF4444` | `#991B1B` |
 
-Thresholds are continuous: 70%, 40%, and 20% are the lower bounds of their bands. Light-theme variants preserve the four identities while improving small-text contrast. API values are percentages **used**; colors use `100 - used`, clamped to 0–100, before display conversion or rounding. Colors always describe remaining quota in either display mode. Claude Code and Antigravity retain their existing colors. Loading/error values use a neutral Codex color.
+Exactly on pace (`bufferDays = 0`) is light green. The +0.5-day boundary remains light green too. For example, 50% remaining with two days until reset is dark green (+1.5 days), but the same 50% with five days until reset is light red (−1.5 days). 10% remaining with five days until reset is dark red (−4.3 days).
+
+The 5h row uses a five-hour cycle with proportionally scaled thresholds: weekly buffer thresholds are multiplied by `5h / 168h`, so +1.5 days becomes about +1h04m17s. Each row uses its own reset. Values are calculated before display rounding, with fractional seconds, and colors repaint at least once a minute while a future Codex reset is known, without additional quota requests. Light-theme variants improve small-text contrast. Loading/error values and unknown or expired reset times use a neutral Codex color; no fixed-percentage fallback is used. Claude Code and Antigravity retain their existing colors.
+
+This is a comparison with a theoretical linear budget, not a prediction based on measured consumption history. Low-quota alerts retain their existing percentage thresholds.
 
 ## Quota display
 
@@ -33,7 +43,7 @@ Right-click the widget or tray icon and choose **Quota display → Remaining quo
 - **Remaining quota** (default): the bar and number show `100 - used`. A full quota is a full bar, which empties as quota is used.
 - **Used quota**: the bar and number show the percentage used, preserving the historical used-quota display.
 
-For 20% used, Remaining shows **80%** with an 80% cyan bar; Used shows **20%** with a 20% cyan bar. For 90% used, the values are **10%** and **90%**, respectively, and both are red. Switching modes updates cached display data immediately without fetching quotas. Reset counters and display rounding remain unchanged.
+For 20% used, Remaining shows **80%** with an 80% bar; Used shows **20%** with a 20% bar. Both use the same pace color based on remaining quota and reset time. For 90% used, the values are **10%** and **90%**, respectively, again with the same pace color. Switching modes updates cached display data immediately without fetching quotas. Reset counters and display rounding remain unchanged.
 
 The setting `"quota_display_mode": "remaining"` or `"used"` is saved in the existing `%APPDATA%\CodexUsage\settings.json`. Missing or invalid values default safely to `remaining`, including older settings files, while retaining other preferences. Language chooses text/layout, not the Codex display mode; Simplified Chinese keeps its compact reset times with the appropriate remaining/used label. This setting affects Codex only; Claude Code and Antigravity keep their historical display behavior.
 

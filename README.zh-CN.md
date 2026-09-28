@@ -7,7 +7,13 @@
 
 AI quota monitoring directly in your Windows taskbar.
 
-此社区分支源自 [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor)，不隶属于 OpenAI、Anthropic 或 Google。首版为 1.9.2；更新仅来自本分支。Codex 5h 和 7d 独立按剩余额度着色：青色 70–100%，蓝色 40–69%，琥珀色 20–39%，红色 0–19%。浅色主题使用更深的同色系以提高文字对比度。保留原图标以及本地 `%APPDATA%\CodexUsage` 设置。详见 [English README](README.md)。
+此社区分支源自 [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor)，不隶属于 OpenAI、Anthropic 或 Google。首版为 1.9.2；更新仅来自本分支。Codex 5h 和 7d 独立根据剩余额度与距离重置的精确时间着色，不再仅按剩余百分比着色。浅色主题使用更深的同色系以提高文字对比度。保留原图标以及本地 `%APPDATA%\CodexUsage` 设置。详见 [English README](README.md)。
+
+## 动态额度颜色
+
+周额度的缓冲天数为 `剩余百分比 / 100 × 7 − 距离重置的秒数 / 86400`。缓冲 ≥ 1.5 天为深绿；0 至不足 1.5 天为浅绿；−0.5 至不足 0 天为浅黄；−1 至不足 −0.5 天为深黄；−2 至不足 −1 天为浅红；低于 −2 天为深红。恰好跟上理论进度（0 天）属于正常情况，显示浅绿。
+
+5 小时周期按比例缩放相同阈值。每行使用自己的重置时间，剩余/已用显示模式不改变颜色。每分钟至少重绘一次颜色，不增加额度请求；重置时间未知或已过期以及错误状态使用中性颜色。此计算比较的是理论线性预算，不是基于历史消费速度的预测。Claude Code 和 Antigravity 保持原有颜色，低额度提醒的百分比阈值不变。
 
 <img src=".github/codex-usage-icon.png" alt="Cybersouls Taskbar Quota HUD 图标" width="96" height="96">
 
@@ -15,7 +21,7 @@ AI quota monitoring directly in your Windows taskbar.
 
 右键点击任务栏组件或托盘图标，在 **额度显示** 中选择 **剩余额度**（默认）或 **已用额度**。这个设置同时应用于 Codex 的 5h 和 7d 两行，在所有语言中都生效；语言不再决定 Codex 显示剩余还是已用额度。
 
-已用 20% 时，剩余模式显示 80%，进度条填充 80%；已用模式显示 20%，进度条填充 20%。两个模式的颜色始终按剩余额度计算，所以均为青色。简体中文保留原有的紧凑重置时间布局，并分别显示“剩余”或“已用”。切换模式只更新已有数据的显示，不会重新请求额度。
+已用 20% 时，剩余模式显示 80%，进度条填充 80%；已用模式显示 20%，进度条填充 20%。两个模式的颜色均根据剩余额度与重置时间计算，因此相同。简体中文保留原有的紧凑重置时间布局，并分别显示“剩余”或“已用”。切换模式只更新已有数据的显示，不会重新请求额度。
 
 选择保存在现有 `%APPDATA%\CodexUsage\settings.json` 的 `quota_display_mode` 字段中，值为 `remaining` 或 `used`。旧设置中缺少该字段或值无效时，默认使用 `remaining`，其他偏好保持不变。这个选项仅影响 Codex；Claude Code 和 Antigravity 的显示行为保持不变。
 

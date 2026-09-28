@@ -25,7 +25,7 @@ use crate::native_interop::{
     WM_APP_USAGE_UPDATED,
 };
 use crate::poller;
-use crate::quota_colors::codex_quota_color_from_remaining;
+use crate::quota_colors::{codex_quota_color_from_pace, CODEX_SESSION_CYCLE, CODEX_WEEKLY_CYCLE};
 use crate::quota_display::{display_percentage, QuotaDisplayMode};
 use crate::theme;
 use crate::tray_icon;
@@ -1552,13 +1552,36 @@ fn codex_accent_color(is_dark: bool) -> Color {
     }
 }
 
-fn codex_row_color(used_percentage: f64, value_text: &str, is_dark: bool) -> Color {
-    if value_text.contains('%') {
-        codex_quota_color_from_remaining(poller::remaining_percentage(used_percentage), is_dark)
-    } else {
-        // Loading/auth/network errors do not imply that quota is available.
-        codex_accent_color(is_dark)
+fn codex_row_color(
+    used_percentage: f64,
+    value_text: &str,
+    is_dark: bool,
+    cycle: Duration,
+    resets_at: Option<SystemTime>,
+    now: SystemTime,
+) -> Color {
+    if value_text.contains('%') && used_percentage.is_finite() {
+        if let Some(color) = codex_quota_color_from_pace(
+            poller::remaining_percentage(used_percentage),
+            resets_at,
+            cycle,
+            now,
+            is_dark,
+        ) {
+            return color;
+        }
     }
+    // Errors or missing/stale reset times do not imply a known quota pace.
+    codex_accent_color(is_dark)
+}
+
+fn codex_reset_times_from_state(state: &AppState) -> (Option<SystemTime>, Option<SystemTime>) {
+    state
+        .data
+        .as_ref()
+        .and_then(|data| data.codex.as_ref())
+        .map(|data| (data.session.resets_at, data.weekly.resets_at))
+        .unwrap_or((None, None))
 }
 
 fn antigravity_accent_color() -> Color {
@@ -1846,6 +1869,7 @@ fn render_layered() {
         embedded,
         language,
         quota_display_mode,
+        codex_resets,
         strings,
         session_pct,
         session_text,
@@ -1873,6 +1897,7 @@ fn render_layered() {
                 s.embedded,
                 s.language,
                 s.quota_display_mode,
+                codex_reset_times_from_state(s),
                 s.language.strings(),
                 s.session_percent,
                 s.session_text.clone(),
@@ -1971,6 +1996,7 @@ fn render_layered() {
             &track,
             language,
             quota_display_mode,
+            codex_resets,
             strings,
             session_pct,
             &session_text,
@@ -2050,6 +2076,7 @@ fn paint_content(
     track: &Color,
     language: LanguageId,
     quota_display_mode: QuotaDisplayMode,
+    codex_resets: (Option<SystemTime>, Option<SystemTime>),
     strings: Strings,
     session_pct: f64,
     session_text: &str,
@@ -2070,9 +2097,24 @@ fn paint_content(
     show_weekly_window: bool,
     antigravity_accent: &Color,
 ) {
-    // Choose each row's color from raw used quota BEFORE display localization.
-    let codex_session_accent = codex_row_color(codex_session_pct, codex_session_text, is_dark);
-    let codex_weekly_accent = codex_row_color(codex_weekly_pct, codex_weekly_text, is_dark);
+    // Use each raw quota and its own precise reset, before display conversion.
+    let now = SystemTime::now();
+    let codex_session_accent = codex_row_color(
+        codex_session_pct,
+        codex_session_text,
+        is_dark,
+        CODEX_SESSION_CYCLE,
+        codex_resets.0,
+        now,
+    );
+    let codex_weekly_accent = codex_row_color(
+        codex_weekly_pct,
+        codex_weekly_text,
+        is_dark,
+        CODEX_WEEKLY_CYCLE,
+        codex_resets.1,
+        now,
+    );
     unsafe {
         let session_pct = legacy_provider_display_percentage(language, session_pct);
         let weekly_pct = legacy_provider_display_percentage(language, weekly_pct);
@@ -2515,7 +2557,21 @@ fn schedule_countdown_timer() {
     ];
     let min_delay = delays.into_iter().flatten().min();
 
+    let pace_refresh = data
+        .codex
+        .as_ref()
+        .filter(|_| s.show_codex)
+        .filter(|usage| {
+            [usage.session.resets_at, usage.weekly.resets_at]
+                .into_iter()
+                .flatten()
+                .any(|reset| reset > SystemTime::now())
+        })
+        .map(|_| Duration::from_secs(60));
     let ms = min_delay
+        .into_iter()
+        .chain(pace_refresh)
+        .min()
         .unwrap_or(Duration::from_secs(60))
         .as_millis()
         .max(1000) as u32;
@@ -3755,6 +3811,7 @@ fn paint(hdc: HDC, hwnd: HWND) {
         is_dark,
         language,
         quota_display_mode,
+        codex_resets,
         strings,
         session_pct,
         session_text,
@@ -3780,6 +3837,7 @@ fn paint(hdc: HDC, hwnd: HWND) {
                 s.is_dark,
                 s.language,
                 s.quota_display_mode,
+                codex_reset_times_from_state(s),
                 s.language.strings(),
                 s.session_percent,
                 s.session_text.clone(),
@@ -3846,6 +3904,7 @@ fn paint(hdc: HDC, hwnd: HWND) {
             &track,
             language,
             quota_display_mode,
+            codex_resets,
             strings,
             session_pct,
             &session_text,
@@ -4244,11 +4303,13 @@ mod tests {
 
     #[test]
     fn codex_modes_keep_color_semantics_and_neutral_error_states() {
+        let now = SystemTime::now();
+        let reset = Some(now + Duration::from_secs(2 * 86_400));
         for mode in [QuotaDisplayMode::Remaining, QuotaDisplayMode::Used] {
             for (used, remaining, hex) in [
-                (20.0, 80.0, "#22D3EE"),
-                (90.0, 10.0, "#EF4444"),
-                (30.1, 69.9, "#3B82F6"),
+                (20.0, 80.0, "#22C55E"),
+                (90.0, 10.0, "#FCA5A5"),
+                (30.1, 69.9, "#22C55E"),
             ] {
                 let displayed = codex_display_percentage(used, "50%", mode);
                 assert_eq!(
@@ -4260,14 +4321,22 @@ mod tests {
                     }
                 );
                 assert_eq!(
-                    codex_row_color(used, &format!("{displayed:.0}%"), true).to_colorref(),
+                    codex_row_color(
+                        used,
+                        &format!("{displayed:.0}%"),
+                        true,
+                        CODEX_WEEKLY_CYCLE,
+                        reset,
+                        now
+                    )
+                    .to_colorref(),
                     Color::from_hex(hex).to_colorref()
                 );
             }
             for text in ["--", "...", "!", "NET", "429", "ERR"] {
                 assert_eq!(codex_display_percentage(0.0, text, mode), 0.0);
                 assert_eq!(
-                    codex_row_color(0.0, text, true).to_colorref(),
+                    codex_row_color(0.0, text, true, CODEX_WEEKLY_CYCLE, reset, now).to_colorref(),
                     codex_accent_color(true).to_colorref()
                 );
             }
@@ -4339,6 +4408,10 @@ mod tests {
                             &Color::from_hex("#444444"),
                             language,
                             mode,
+                            (
+                                Some(SystemTime::now() + Duration::from_secs(3600)),
+                                Some(SystemTime::now() + Duration::from_secs(5 * 86_400)),
+                            ),
                             language.strings(),
                             0.0,
                             "--",
@@ -4374,9 +4447,9 @@ mod tests {
                         let bar_width = (sc(SEGMENT_W) + sc(SEGMENT_GAP))
                             * row_bar_segment_count(1)
                             - sc(SEGMENT_GAP);
-                        let cyan = Color::from_hex(if is_dark { "#22D3EE" } else { "#0E7490" })
+                        let green = Color::from_hex(if is_dark { "#22C55E" } else { "#166534" })
                             .to_colorref();
-                        let red = Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" })
+                        let red = Color::from_hex(if is_dark { "#EF4444" } else { "#991B1B" })
                             .to_colorref();
                         // Measure the end of the actual colored region on each bar.
                         let fill_end = |y, color| {
@@ -4387,7 +4460,7 @@ mod tests {
                                 .max()
                                 .map_or(0, |x| x + 1)
                         };
-                        let session_width = fill_end(row1_y, cyan);
+                        let session_width = fill_end(row1_y, green);
                         let weekly_width = fill_end(row2_y, red);
                         let session_middle =
                             GetPixel(hdc, bar_x + bar_width / 2, row1_y + sc(SEGMENT_H) / 2).0;
@@ -4414,7 +4487,7 @@ mod tests {
                         assert_eq!(
                             session_middle,
                             if mode == QuotaDisplayMode::Remaining {
-                                cyan
+                                green
                             } else {
                                 track
                             }
@@ -4428,7 +4501,7 @@ mod tests {
                             }
                         );
                         assert_eq!(
-                            session_fill, cyan,
+                            session_fill, green,
                             "5h, dark={is_dark}, language={language:?}"
                         );
                         assert_eq!(
@@ -4453,15 +4526,30 @@ mod tests {
                 LanguageId::French,
                 LanguageId::SimplifiedChinese,
             ] {
-                let session = codex_row_color(18.0, "18%", is_dark);
-                let weekly = codex_row_color(83.0, "83%", is_dark);
+                let now = SystemTime::now();
+                let session = codex_row_color(
+                    18.0,
+                    "18%",
+                    is_dark,
+                    CODEX_SESSION_CYCLE,
+                    Some(now + Duration::from_secs(3600)),
+                    now,
+                );
+                let weekly = codex_row_color(
+                    83.0,
+                    "83%",
+                    is_dark,
+                    CODEX_WEEKLY_CYCLE,
+                    Some(now + Duration::from_secs(5 * 86_400)),
+                    now,
+                );
                 assert_eq!(
                     session.to_colorref(),
-                    Color::from_hex(if is_dark { "#22D3EE" } else { "#0E7490" }).to_colorref()
+                    Color::from_hex(if is_dark { "#22C55E" } else { "#166534" }).to_colorref()
                 );
                 assert_eq!(
                     weekly.to_colorref(),
-                    Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" }).to_colorref()
+                    Color::from_hex(if is_dark { "#EF4444" } else { "#991B1B" }).to_colorref()
                 );
                 assert_eq!(
                     legacy_provider_display_percentage(language, 18.0),
@@ -4474,7 +4562,15 @@ mod tests {
             }
             for error in ["--", "...", "!", "NET", "429", "ERR"] {
                 assert_eq!(
-                    codex_row_color(0.0, error, is_dark).to_colorref(),
+                    codex_row_color(
+                        0.0,
+                        error,
+                        is_dark,
+                        CODEX_WEEKLY_CYCLE,
+                        None,
+                        SystemTime::now()
+                    )
+                    .to_colorref(),
                     codex_accent_color(is_dark).to_colorref()
                 );
             }
