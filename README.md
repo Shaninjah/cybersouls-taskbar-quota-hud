@@ -17,22 +17,22 @@ A small native Windows application forked from [upstream-ray/codex-usage-monitor
 
 Each Codex row (5h and 7d) compares **remaining quota with the precise time until its own reset**, independently of the selected display mode. For the weekly cycle:
 
-`quotaDaysRemaining = remainingPercent / 100 * 7`
+`quotaHoursRemaining = remainingPercent / 100 * 168`
 
-`bufferDays = quotaDaysRemaining - secondsUntilReset / 86400`
+`bufferHours = quotaHoursRemaining - secondsUntilReset / 3600`
 
-| Color | Weekly buffer (days) | Dark theme | Light theme |
+| Color | Weekly buffer (hours) | Dark theme | Light theme |
 |---|---|---|---|
-| Dark green | ≥ +1.5 | `#22C55E` | `#166534` |
-| Light green | ≥ 0 and < +1.5 | `#86EFAC` | `#15803D` |
-| Light yellow | ≥ −0.5 and < 0 | `#FEF08A` | `#A16207` |
-| Dark yellow | ≥ −1 and < −0.5 | `#EAB308` | `#854D0E` |
-| Light red | ≥ −2 and < −1 | `#FCA5A5` | `#DC2626` |
-| Dark red | < −2 | `#EF4444` | `#991B1B` |
+| Dark green | ≥ +36 | `#22C55E` | `#166534` |
+| Light green | ≥ 0 and < +36 | `#86EFAC` | `#15803D` |
+| Light yellow | ≥ −12 and < 0 | `#FEF08A` | `#A16207` |
+| Dark yellow | ≥ −24 and < −12 | `#EAB308` | `#854D0E` |
+| Light red | ≥ −48 and < −24 | `#FCA5A5` | `#DC2626` |
+| Dark red | < −48 | `#EF4444` | `#991B1B` |
 
-Exactly on pace (`bufferDays = 0`) is light green. The +0.5-day boundary remains light green too. For example, 50% remaining with two days until reset is dark green (+1.5 days), but the same 50% with five days until reset is light red (−1.5 days). 10% remaining with five days until reset is dark red (−4.3 days).
+Exactly on pace (`bufferHours = 0`) is light green. The +12-hour boundary remains light green too. For example, 50% remaining represents 84 hours of quota: with 48 hours until reset it is dark green (+36 hours), but with 120 hours until reset it is light red (−36 hours). 10% remaining with 120 hours until reset is dark red (−103.2 hours).
 
-The 5h row uses a five-hour cycle with proportionally scaled thresholds: weekly buffer thresholds are multiplied by `5h / 168h`, so +1.5 days becomes about +1h04m17s. Each row uses its own reset. Values are calculated before display rounding, with fractional seconds, and colors repaint at least once a minute while a future Codex reset is known, without additional quota requests. Light-theme variants improve small-text contrast. Loading/error values and unknown or expired reset times use a neutral Codex color; no fixed-percentage fallback is used. Claude Code and Antigravity retain their existing colors.
+The 5h row uses a five-hour cycle with proportionally scaled thresholds: weekly buffer thresholds are multiplied by `5h / 168h`, so +36 hours becomes about +1h04m17s. Each row uses its own reset timestamp. Calculations retain fractional hours and seconds without rounding to whole hours or days; a color changes when a band boundary is crossed. Colors repaint at least once a minute while a future Codex reset is known, without additional quota requests. Light-theme variants improve small-text contrast. Loading/error values and unknown or expired reset times use a neutral Codex color; no fixed-percentage fallback is used. Claude Code and Antigravity retain their existing colors.
 
 This is a comparison with a theoretical linear budget, not a prediction based on measured consumption history. Low-quota alerts retain their existing percentage thresholds.
 
