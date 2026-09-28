@@ -12,6 +12,16 @@ Cybersouls Taskbar Quota HUD remains a single native Windows executable. Install
 
 The installer is per-user and does not request elevation. It verifies the release SHA256 before replacing an existing executable. Replacement uses a temporary file and keeps the previous executable until the new file has been placed successfully.
 
+## Download and update trust
+
+Download URLs must be HTTPS GitHub release paths under `Shaninjah/cybersouls-taskbar-quota-hud`, with the expected asset filename. Checksum files must identify exactly `cybersouls-taskbar-quota-hud.exe`; the installer and self-updater reject an unexpected file or malformed checksum. GitHub may redirect the asset request to its release CDN. No provider OAuth token is used for updates.
+
+The executable and checksum come from the same release. SHA256 detects download corruption or a mismatch; it is not an independent publisher signature and cannot protect against a compromised maintainer account or release workflow. The current EXE is not Authenticode-signed, so SmartScreen or antivirus warnings are possible. No self-signed certificate is provided as a public signing substitute.
+
+The installer retains the previous EXE until a normal launch succeeds and remains active for its short startup check. With `-NoLaunch`, the `.old` backup is retained. Binary rollback does not make every registry/shortcut operation transactional, and startup checks cannot guarantee long-term runtime health. The self-updater also rolls back a replacement if the new process immediately fails to launch; full release download/update is still to be exercised after the first release.
+
+Install/uninstall helpers reject symbolic links or junctions in application paths. Before recursive uninstall, the entire application tree (and the settings tree only with `-RemoveSettings`) is checked for reparse points. Settings are preserved by default. The shared startup key is removed only when it targets this installed EXE.
+
 ## Portable mode
 
 `cybersouls-taskbar-quota-hud.exe` can be run from any user-writable directory without installation. Portable mode uses the same `%APPDATA%\CodexUsage\settings.json` settings as a direct or WinGet installation.

@@ -106,6 +106,8 @@ If you use Claude Code through WSL, that is supported too. The monitor can read 
 
 ## Install
 
+The first Cybersouls release has not been published yet. Until it is, build the feature branch locally; the release downloads below become available after publication.
+
 For a per-user installation, download `install.ps1` from the [latest release](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/latest), then run:
 
 ```powershell
@@ -114,11 +116,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
 The installer verifies the release SHA256 and installs to `%LOCALAPPDATA%\Programs\CybersoulsTaskbarQuotaHUD` without administrator access. It adds a Start menu shortcut and an entry in Windows Installed Apps.
 
+The executable is currently **unsigned**. Windows SmartScreen or antivirus software may show a warning. For a manual download, run `Get-FileHash .\cybersouls-taskbar-quota-hud.exe -Algorithm SHA256` and compare the result with `cybersouls-taskbar-quota-hud.exe.sha256` from the same release. SHA256 checks integrity; it is not a publisher signature or independent protection against a compromised release account. See [installation and update trust](docs/installation.md#download-and-update-trust).
+
 For portable use, download `cybersouls-taskbar-quota-hud.exe` from the same release and run it from any user-writable directory. You can also build it locally:
 
 ```powershell
 cargo build --release
 ```
+
+For an executable you plan to share, use `./scripts/build-release.ps1` instead. It runs `cargo build --release --locked` with dynamic source-path remapping to keep your personal build paths out of the EXE. CI and release use the same helper.
 
 Local builds create the executable at `target\release\cybersouls-taskbar-quota-hud.exe`.
 
@@ -221,11 +227,14 @@ What the app reads:
 
 What the app sends over the network:
 
-- Requests to Anthropic's Claude endpoints to read your usage and rate-limit information
-- Requests to ChatGPT's Codex usage endpoint to read your Codex usage and rate-limit information, if Codex is enabled
-- Requests to Google's Cloud Code / Antigravity endpoints to read your Antigravity quota information, if Antigravity is enabled
-- Requests to GitHub only if you use the app's update check / self-update feature
-- If proxy environment variables such as `HTTPS_PROXY`, `HTTP_PROXY`, or `ALL_PROXY` are set, those outbound requests may use that proxy
+| Provider | Domains | Purpose and credentials |
+|---|---|---|
+| Codex | `chatgpt.com` | Read `/backend-api/wham/usage` using the local OAuth bearer token and, when present, account ID. |
+| Claude Code | `api.anthropic.com` | Read `/api/oauth/usage`; `/v1/messages` is a minimal generation fallback for rate-limit headers. Both use the local OAuth bearer token. |
+| Antigravity | `daily-cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`, `cloudcode-pa.googleapis.com` | Query the existing Cloud Code quota/project/model endpoints using the local OAuth bearer token. |
+| Updates | `api.github.com`, `github.com`, GitHub's release-download CDN | Manual and scheduled checks, plus downloads from this fork. No provider OAuth credential is attached. |
+
+The monitor's HTTP agents require HTTPS and use normal operating-system certificate validation. `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and their lowercase forms may route these requests through a configured proxy. A tunneling proxy normally relays encrypted HTTPS; a proxy that terminates TLS using a certificate trusted by your system can inspect authenticated traffic. Use a proxy you trust.
 
 What the app stores locally:
 
@@ -237,24 +246,24 @@ What the app stores locally:
 - Last update check time
 - Visible quota rows and low-quota alert threshold
 - Quota-window notification keys used to prevent duplicate alerts
-- Displayed model preferences
+- Enabled providers and Codex Remaining/Used display mode
+- Optional diagnostic logs (`--diagnose`) and temporary updater files
 
 What it does **not** do:
 
-- It does not send your credentials to any other server
-- It does not use a separate backend service
-- It does not collect analytics or telemetry
-- It does not upload your project files
+- The reviewed application code contains no Cybersouls telemetry or backend endpoint
+- The monitor's own quota-request bodies do not include your project files
+- OAuth credentials are not serialized into the monitor's settings or written to its diagnostic logs
 - It does not directly edit your Codex credentials file
 - It does not read or reuse Claude Desktop authentication data
 
 Notes:
 
-- If your Claude Code token is expired, the app may ask the local Claude CLI to refresh it in the background
-- If your Codex token is expired, the app may ask the local Codex CLI to refresh it in the background. The monitor does not write `auth.json` itself; any credential update is handled by the Codex CLI.
+- Local Claude credentials may also be probed to determine CLI availability. Credentials are read into temporary in-memory strings; the monitor does not create a new persistent credential store.
+- If your Claude or Codex token expires, existing refresh routines may launch the local CLI with a minimal `.` prompt. These CLIs follow their own settings and may make generation requests. The Claude Messages fallback can also consume a small amount of quota. Ordinary Codex quota GET requests and local color repainting do not submit a generation prompt. Credential updates are handled by the provider CLI, not by writing tokens into the monitor's settings.
 - If your Antigravity token is expired, open Antigravity and sign in again. The monitor does not write Windows Credential Manager entries itself.
 - Portable installs can update themselves by downloading the latest release from this repository
-- Proxies should be trusted because proxied usage requests include your OAuth bearer token inside the TLS connection
+- Diagnostics can contain local paths, distro names, timestamps and quota values. Review/redact them before attaching an issue; never attach credential files. Report problems through [GitHub Issues](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/issues).
 
 ## How It Works
 

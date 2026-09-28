@@ -22,4 +22,4 @@
 
 - release 目录只保留 `codex-usage.exe`，旧名称构建产物已清理。
 - PE 元数据：CompanyName=Ray，ProductName=Codex Usage，OriginalFilename=codex-usage.exe。
-- 最终进程 PID 48296，Responding=True，WorkingSetMB=20.5，PrivateMB=3.2。
+- 最终进程 local process verified，Responding=True，WorkingSetMB=20.5，PrivateMB=3.2。

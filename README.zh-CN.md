@@ -186,7 +186,7 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 - 请求 Anthropic 的 Claude 端点，以读取用量和速率限制信息
 - 启用 Codex 时，请求 ChatGPT 的 Codex 用量端点，以读取 Codex 用量和速率限制信息
 - 启用 Antigravity 时，请求 Google Cloud Code / Antigravity 端点，以读取 Antigravity 配额信息
-- 仅在使用软件更新检查或自更新功能时请求 GitHub
+- 手动与定时更新检查、自更新下载会请求 GitHub，不附带 provider OAuth 令牌
 - 如果设置了 `HTTPS_PROXY`、`HTTP_PROXY` 或 `ALL_PROXY` 等代理环境变量，上述出站请求可能通过代理发送
 
 应用在本地保存的内容：
@@ -199,14 +199,14 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 - 上次更新检查时间
 - 可见的配额行和低配额提醒阈值
 - 用于避免重复提醒的配额窗口通知键
-- 显示模型偏好
+- 启用的 provider 和 Codex 剩余/已用显示模式
+- 可选诊断日志和临时更新文件
 
 应用**不会**执行的操作：
 
-- 不会将凭据发送到其他服务器
-- 不使用独立的后端服务
-- 不收集分析数据或遥测信息
-- 不上传项目文件
+- 已审查的应用代码不包含 Cybersouls 遥测或后端端点
+- 监控器自身的配额请求不包含项目文件
+- OAuth 凭据不会序列化到监控器设置或写入其诊断日志
 - 不直接修改 Codex 凭据文件
 - 不读取或复用 Claude 桌面客户端的认证数据
 
@@ -216,7 +216,9 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 - 如果 Codex 令牌过期，应用可能会在后台调用本地 Codex CLI 进行刷新。监控器本身不会写入 `auth.json`，任何凭据更新都由 Codex CLI 完成
 - 如果 Antigravity 令牌过期，请打开 Antigravity 并重新登录。监控器不会写入 Windows 凭据管理器
 - 便携版可以从本仓库下载最新版本进行自更新
-- 代理必须可信，因为代理转发的用量请求会在 TLS 连接内包含 OAuth Bearer 令牌
+- 本地 CLI 刷新使用最小 `.` 提示，并遵循 CLI 自身的设置；这些调用及 Claude Messages 回退可能消耗少量额度。Codex 普通用量 GET 和本地颜色重绘不会发送生成提示。
+- HTTP agents 强制 HTTPS 并使用系统证书验证。隧道代理通常只转发加密数据；使用系统信任证书终止 TLS 的代理可以查看认证流量，因此只使用可信代理。
+- 诊断日志可能含本地路径、发行版名称、时间与配额数值；提交 issue 前请检查并脱敏，勿附带凭据文件。完整的域名、存储及传输说明见 [English README](README.md#privacy-and-security)。
 
 ## 工作原理
 
@@ -234,6 +236,6 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 
 本项目采用 MIT License。原始 [LICENSE](LICENSE) 及版权声明均予以保留。
 
-Cybersouls Taskbar Quota HUD 是 [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor) 的持续维护衍生版本。感谢 Craig Constable 和上游贡献者创建原始项目。本仓库中的修改与上游维护者或 OpenAI 不存在隶属或背书关系。
+Cybersouls Taskbar Quota HUD 是 [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor) 的分支，后者源自 [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)。感谢 Craig Constable 和上游贡献者创建原始项目。本仓库中的修改与上游维护者、OpenAI、Anthropic 或 Google 不存在隶属或背书关系。
 
 如果你想检查程序行为或审核代码，仓库中提供了全部源码。
