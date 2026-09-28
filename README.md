@@ -59,7 +59,7 @@ The setting `"quota_display_mode": "remaining"` or `"used"` is saved in the exis
 
 ## Fork version and branding
 
-The first Cybersouls release is **1.9.2**, with recommended tag `v1.9.2`. The existing updater compares numeric major/minor/patch values and ignores prerelease suffixes, so releases use ordinary increasing numeric versions. Both the updater and installer use [this fork's releases](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases), never upstream releases. Until the first release exists, update checks may report that no release is available. The original application icon is retained for this first version; a distinct icon can be added later.
+The first Cybersouls release is [**1.9.2** (`v1.9.2`)](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/tag/v1.9.2). The existing updater compares numeric major/minor/patch values and ignores prerelease suffixes, so releases use ordinary increasing numeric versions. Both the updater and installer use [this fork's releases](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases), never upstream releases. The original application icon is retained for this first version; a distinct icon can be added later.
 
 Keep `origin` pointing to this fork and `upstream` pointing to the original repository. Future upstream changes can be fetched with `git fetch upstream` and reviewed/merged from `upstream/main`.
 
@@ -106,7 +106,7 @@ If you use Claude Code through WSL, that is supported too. The monitor can read 
 
 ## Install
 
-The first Cybersouls release has not been published yet. Until it is, build the feature branch locally; the release downloads below become available after publication.
+Download [Cybersouls Taskbar Quota HUD v1.9.2](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/tag/v1.9.2). For the recommended per-user installation, save [install.ps1](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/download/v1.9.2/install.ps1) and run the command below; it downloads the EXE, verifies its SHA256, and installs the uninstall helper.
 
 For a per-user installation, download `install.ps1` from the [latest release](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/latest), then run:
 
