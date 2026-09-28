@@ -25,6 +25,7 @@ use crate::native_interop::{
     WM_APP_USAGE_UPDATED,
 };
 use crate::poller;
+use crate::quota_colors::codex_quota_color_from_remaining;
 use crate::theme;
 use crate::tray_icon;
 use crate::updater::{self, InstallChannel, ReleaseDescriptor, UpdateCheckResult};
@@ -1531,6 +1532,15 @@ fn codex_accent_color(is_dark: bool) -> Color {
     }
 }
 
+fn codex_row_color(used_percentage: f64, value_text: &str, is_dark: bool) -> Color {
+    if value_text.contains('%') {
+        codex_quota_color_from_remaining(poller::remaining_percentage(used_percentage), is_dark)
+    } else {
+        // Loading/auth/network errors do not imply that quota is available.
+        codex_accent_color(is_dark)
+    }
+}
+
 fn antigravity_accent_color() -> Color {
     Color::from_hex("#4285F4")
 }
@@ -1540,14 +1550,6 @@ fn claude_usage_text_color(is_dark: bool) -> Color {
         Color::from_hex("#F09A7A")
     } else {
         Color::from_hex("#A94F32")
-    }
-}
-
-fn codex_usage_text_color(is_dark: bool) -> Color {
-    if is_dark {
-        Color::from_hex("#F5F5F5")
-    } else {
-        Color::from_hex("#1F1F1F")
     }
 }
 
@@ -1885,7 +1887,6 @@ fn render_layered() {
     let height = sc(WIDGET_HEIGHT);
 
     let accent = claude_accent_color();
-    let codex_accent = codex_accent_color(is_dark);
     let antigravity_accent = antigravity_accent_color();
     let track = if is_dark {
         Color::from_hex("#444444")
@@ -1964,7 +1965,6 @@ fn render_layered() {
             show_antigravity,
             show_session_window,
             show_weekly_window,
-            &codex_accent,
             &antigravity_accent,
         );
 
@@ -2043,9 +2043,11 @@ fn paint_content(
     show_antigravity: bool,
     show_session_window: bool,
     show_weekly_window: bool,
-    codex_accent: &Color,
     antigravity_accent: &Color,
 ) {
+    // Choose each row's color from raw used quota BEFORE display localization.
+    let codex_session_accent = codex_row_color(codex_session_pct, codex_session_text, is_dark);
+    let codex_weekly_accent = codex_row_color(codex_weekly_pct, codex_weekly_text, is_dark);
     unsafe {
         let session_pct = usage_percent_for_display(language, session_pct);
         let weekly_pct = usage_percent_for_display(language, weekly_pct);
@@ -2152,7 +2154,7 @@ fn paint_content(
                 show_codex,
                 show_antigravity,
                 accent,
-                codex_accent,
+                &codex_session_accent,
                 antigravity_accent,
                 track,
                 label_width,
@@ -2181,7 +2183,7 @@ fn paint_content(
                 show_codex,
                 show_antigravity,
                 accent,
-                codex_accent,
+                &codex_weekly_accent,
                 antigravity_accent,
                 track,
                 label_width,
@@ -3712,7 +3714,6 @@ fn paint(hdc: HDC, hwnd: HWND) {
     };
 
     let accent = claude_accent_color();
-    let codex_accent = codex_accent_color(is_dark);
     let antigravity_accent = antigravity_accent_color();
     let track = if is_dark {
         Color::from_hex("#444444")
@@ -3772,7 +3773,6 @@ fn paint(hdc: HDC, hwnd: HWND) {
             show_antigravity,
             show_session_window,
             show_weekly_window,
-            &codex_accent,
             &antigravity_accent,
         );
 
@@ -3816,11 +3816,7 @@ fn draw_row(
     } else {
         *text_color
     };
-    let codex_value_color = if use_model_text_colors {
-        codex_usage_text_color(is_dark)
-    } else {
-        *text_color
-    };
+    let codex_value_color = *codex_accent;
     let antigravity_value_color = if use_model_text_colors {
         antigravity_usage_text_color(is_dark)
     } else {
@@ -4035,6 +4031,134 @@ mod tests {
   "show_antigravity": false
 }}"#
         )
+    }
+
+    #[test]
+    fn paints_independent_codex_bar_and_text_colors_before_localization() {
+        for is_dark in [true, false] {
+            for language in [LanguageId::English, LanguageId::SimplifiedChinese] {
+                unsafe {
+                    let width = total_widget_width_for(1, language);
+                    let height = sc(WIDGET_HEIGHT);
+                    let hdc = CreateCompatibleDC(HDC::default());
+                    assert!(!hdc.is_invalid());
+                    let bitmap_info = BITMAPINFO {
+                        bmiHeader: BITMAPINFOHEADER {
+                            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                            biWidth: width,
+                            biHeight: -height,
+                            biPlanes: 1,
+                            biBitCount: 32,
+                            biCompression: BI_RGB.0,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    };
+                    let mut bits = std::ptr::null_mut();
+                    let bitmap =
+                        CreateDIBSection(hdc, &bitmap_info, DIB_RGB_COLORS, &mut bits, None, 0)
+                            .unwrap();
+                    let old_bitmap = SelectObject(hdc, bitmap);
+                    let bg = Color::from_hex(if is_dark { "#1C1C1C" } else { "#F3F3F3" });
+                    let text = Color::from_hex(if is_dark { "#888888" } else { "#404040" });
+                    paint_content(
+                        hdc,
+                        width,
+                        height,
+                        is_dark,
+                        &bg,
+                        &text,
+                        &claude_accent_color(),
+                        &Color::from_hex("#444444"),
+                        language,
+                        language.strings(),
+                        0.0,
+                        "--",
+                        0.0,
+                        "--",
+                        18.0,
+                        "18%",
+                        83.0,
+                        "83%",
+                        0.0,
+                        "--",
+                        0.0,
+                        "--",
+                        false,
+                        true,
+                        false,
+                        true,
+                        true,
+                        &antigravity_accent_color(),
+                    );
+                    let (label_width, _) = usage_layout_widths(language);
+                    let bar_x = sc(LEFT_DIVIDER_W)
+                        + sc(DIVIDER_RIGHT_MARGIN)
+                        + sc(label_width)
+                        + sc(LABEL_RIGHT_MARGIN);
+                    let row2_y = height - sc(5) - sc(SEGMENT_H);
+                    let row1_y = row2_y - sc(10) - sc(SEGMENT_H);
+                    let session_fill = GetPixel(hdc, bar_x + sc(4), row1_y + sc(SEGMENT_H) / 2).0;
+                    let weekly_fill = GetPixel(hdc, bar_x + sc(4), row2_y + sc(SEGMENT_H) / 2).0;
+                    let weekly_text_color = GetTextColor(hdc).0;
+                    let cyan =
+                        Color::from_hex(if is_dark { "#22D3EE" } else { "#0E7490" }).to_colorref();
+                    let red =
+                        Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" }).to_colorref();
+                    let _ = SelectObject(hdc, old_bitmap);
+                    let _ = DeleteObject(bitmap);
+                    let _ = DeleteDC(hdc);
+                    assert_eq!(
+                        session_fill, cyan,
+                        "5h, dark={is_dark}, language={language:?}"
+                    );
+                    assert_eq!(
+                        weekly_fill, red,
+                        "7d, dark={is_dark}, language={language:?}"
+                    );
+                    assert_eq!(
+                        weekly_text_color, red,
+                        "single-provider values must also be colored"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn codex_rows_keep_independent_colors_across_display_languages() {
+        for is_dark in [true, false] {
+            for language in [
+                LanguageId::English,
+                LanguageId::French,
+                LanguageId::SimplifiedChinese,
+            ] {
+                let session = codex_row_color(18.0, "18%", is_dark);
+                let weekly = codex_row_color(83.0, "83%", is_dark);
+                assert_eq!(
+                    session.to_colorref(),
+                    Color::from_hex(if is_dark { "#22D3EE" } else { "#0E7490" }).to_colorref()
+                );
+                assert_eq!(
+                    weekly.to_colorref(),
+                    Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" }).to_colorref()
+                );
+                assert_eq!(
+                    usage_percent_for_display(language, 18.0),
+                    if language == LanguageId::SimplifiedChinese {
+                        82.0
+                    } else {
+                        18.0
+                    }
+                );
+            }
+            for error in ["--", "...", "!", "NET", "429", "ERR"] {
+                assert_eq!(
+                    codex_row_color(0.0, error, is_dark).to_colorref(),
+                    codex_accent_color(is_dark).to_colorref()
+                );
+            }
+        }
     }
 
     #[test]
