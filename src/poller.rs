@@ -1833,7 +1833,7 @@ mod tests {
         assert_eq!(
             windows_credentials_path_from(
                 Some(PathBuf::from(r"D:\claude-config")),
-                Some(PathBuf::from(r"C:\Users\Ray")),
+                Some(PathBuf::from(r"C:\test-home")),
             ),
             Some(PathBuf::from(r"D:\claude-config\.credentials.json"))
         );
