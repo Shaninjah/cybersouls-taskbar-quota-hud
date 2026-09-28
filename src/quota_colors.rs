@@ -251,6 +251,12 @@ mod tests {
             (50.0, None, CODEX_WEEKLY_CYCLE),
             (50.0, Some(now - Duration::from_secs(1)), CODEX_WEEKLY_CYCLE),
             (f64::NAN, Some(now + hours(48.0)), CODEX_WEEKLY_CYCLE),
+            (f64::INFINITY, Some(now + hours(48.0)), CODEX_WEEKLY_CYCLE),
+            (
+                f64::NEG_INFINITY,
+                Some(now + hours(48.0)),
+                CODEX_WEEKLY_CYCLE,
+            ),
             (50.0, Some(now + hours(48.0)), Duration::ZERO),
         ] {
             assert!(codex_quota_color_from_pace(remaining, reset, cycle, now, true).is_none());

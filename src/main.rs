@@ -17,8 +17,9 @@ fn main() {
     let diagnose_enabled = args.iter().any(|arg| arg == "--diagnose");
     if diagnose_enabled {
         match diagnose::init() {
-            Ok(path) => {
-                diagnose::log(format!("startup args={args:?} log_path={}", path.display()));
+            Ok(_) => {
+                // Arbitrary CLI arguments can contain user-provided sensitive data.
+                diagnose::log("startup");
                 diagnose::log(format!(
                     "version={} install_channel={:?} executable={}",
                     env!("CARGO_PKG_VERSION"),

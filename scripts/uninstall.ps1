@@ -7,6 +7,41 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Assert-NoReparsePoint {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $current = [IO.Path]::GetFullPath($Path)
+    while ($current) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if ($item) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Refusing to modify a path containing a symbolic link or junction.'
+            }
+        }
+        $parent = Split-Path -Parent $current
+        if ($parent -eq $current) { break }
+        $current = $parent
+    }
+}
+
+function Assert-SafeRemovalTree {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    Assert-NoReparsePoint -Path $Path
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        foreach ($item in Get-ChildItem -LiteralPath $Path -Force) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Refusing recursive removal of a tree containing a symbolic link or junction.'
+            }
+            if ($item.PSIsContainer) { Assert-SafeRemovalTree -Path $item.FullName }
+        }
+    }
+}
+
+foreach ($root in @($env:LOCALAPPDATA, $env:APPDATA)) {
+    if ([string]::IsNullOrWhiteSpace($root) -or -not [IO.Path]::IsPathRooted($root)) {
+        throw 'A valid absolute per-user application data directory is required.'
+    }
+}
+
 $InstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\CybersoulsTaskbarQuotaHUD'
 $ExpectedInstallDirectory = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
 $TargetPath = Join-Path $ExpectedInstallDirectory 'cybersouls-taskbar-quota-hud.exe'
@@ -20,6 +55,8 @@ $AllowedRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs')).
 if (-not $ExpectedInstallDirectory.StartsWith($AllowedRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to remove unexpected install directory: $ExpectedInstallDirectory"
 }
+Assert-SafeRemovalTree -Path $ExpectedInstallDirectory
+if ($RemoveSettings) { Assert-SafeRemovalTree -Path $SettingsDirectory }
 
 Get-CimInstance Win32_Process -Filter "Name='cybersouls-taskbar-quota-hud.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.ExecutablePath -eq $TargetPath } |

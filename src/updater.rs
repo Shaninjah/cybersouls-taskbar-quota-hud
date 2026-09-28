@@ -193,11 +193,11 @@ fn fetch_latest_release() -> Result<Option<ReleaseDescriptor>, String> {
         .set("User-Agent", user_agent())
         .set("X-GitHub-Api-Version", GITHUB_API_VERSION)
         .call()
-        .map_err(|e| format!("Unable to check GitHub releases: {e}"))?;
+        .map_err(|error| update_http_error("Unable to check GitHub releases", error))?;
 
     let release: GitHubRelease = response
         .into_json()
-        .map_err(|e| format!("Unable to parse GitHub release data: {e}"))?;
+        .map_err(|_| "Unable to parse GitHub release data.".to_string())?;
 
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
     if !is_version_newer(&latest_version, env!("CARGO_PKG_VERSION")) {
@@ -214,6 +214,8 @@ fn fetch_latest_release() -> Result<Option<ReleaseDescriptor>, String> {
         .iter()
         .find(|asset| asset.name.eq_ignore_ascii_case(CHECKSUM_ASSET_NAME))
         .ok_or_else(|| format!("Release asset {CHECKSUM_ASSET_NAME} was not found."))?;
+    validate_release_asset_url(&asset.browser_download_url, RELEASE_ASSET_NAME)?;
+    validate_release_asset_url(&checksum_asset.browser_download_url, CHECKSUM_ASSET_NAME)?;
     let expected_sha256 = fetch_release_checksum(&agent, &checksum_asset.browser_download_url)?;
 
     Ok(Some(ReleaseDescriptor {
@@ -228,7 +230,7 @@ fn fetch_release_checksum(agent: &ureq::Agent, url: &str) -> Result<String, Stri
         .get(url)
         .set("User-Agent", user_agent())
         .call()
-        .map_err(|e| format!("Unable to download the release checksum: {e}"))?;
+        .map_err(|error| update_http_error("Unable to download the release checksum", error))?;
     let content = response
         .into_string()
         .map_err(|e| format!("Unable to read the release checksum: {e}"))?;
@@ -236,13 +238,36 @@ fn fetch_release_checksum(agent: &ureq::Agent, url: &str) -> Result<String, Stri
 }
 
 fn parse_release_checksum(content: &str) -> Result<String, String> {
-    content
-        .split_whitespace()
-        .find(|value| value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()))
-        .map(|value| value.to_ascii_uppercase())
-        .ok_or_else(|| {
-            "The release checksum file does not contain a valid SHA256 value.".to_string()
-        })
+    let fields: Vec<_> = content.split_whitespace().collect();
+    if fields.len() == 2
+        && fields[0].len() == 64
+        && fields[0].chars().all(|ch| ch.is_ascii_hexdigit())
+        && fields[1] == RELEASE_ASSET_NAME
+    {
+        Ok(fields[0].to_ascii_uppercase())
+    } else {
+        Err("The checksum must contain one SHA256 and the expected release filename.".to_string())
+    }
+}
+
+fn validate_release_asset_url(url: &str, expected_name: &str) -> Result<(), String> {
+    let (owner, repo) = github_repo()?;
+    let prefix = format!("https://github.com/{owner}/{repo}/releases/download/");
+    let valid = url.strip_prefix(&prefix).is_some_and(|suffix| {
+        let parts: Vec<_> = suffix.split('/').collect();
+        parts.len() == 2
+            && !parts[0].is_empty()
+            && !matches!(parts[0], "." | "..")
+            && parts[0]
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+            && parts[1] == expected_name
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err("Release asset URL must use this fork's HTTPS GitHub download path.".to_string())
+    }
 }
 
 fn build_agent() -> Result<ureq::Agent, String> {
@@ -250,8 +275,17 @@ fn build_agent() -> Result<ureq::Agent, String> {
         .map_err(|e| format!("Unable to initialize TLS support for update checks: {e}"))?;
     Ok(ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(30))
+        .https_only(true)
         .tls_connector(std::sync::Arc::new(tls))
         .build())
+}
+
+fn update_http_error(context: &str, error: ureq::Error) -> String {
+    // Do not format raw responses, request URLs or proxy error details.
+    match error {
+        ureq::Error::Status(status, _) => format!("{context}: HTTP {status}"),
+        ureq::Error::Transport(error) => format!("{context}: {}", error.kind()),
+    }
 }
 
 fn download_release_asset(
@@ -265,7 +299,7 @@ fn download_release_asset(
         .get(url)
         .set("User-Agent", user_agent())
         .call()
-        .map_err(|e| format!("Unable to download the latest release: {e}"))?;
+        .map_err(|error| update_http_error("Unable to download the latest release", error))?;
 
     let mut reader = response.into_reader();
     let mut file = File::create(partial_path)
@@ -673,6 +707,38 @@ mod tests {
             hash.to_ascii_uppercase()
         );
         assert!(parse_release_checksum("not-a-checksum").is_err());
+        for content in [
+            hash.to_string(),
+            format!("{hash}  other.exe"),
+            format!("prefix {hash}  {RELEASE_ASSET_NAME}"),
+            format!("{hash}  {RELEASE_ASSET_NAME}\n{hash}  {RELEASE_ASSET_NAME}"),
+        ] {
+            assert!(parse_release_checksum(&content).is_err());
+        }
+    }
+
+    #[test]
+    fn release_urls_reject_upstream_downgrades_and_path_confusion() {
+        let valid = format!(
+            "https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/download/v1.9.2/{RELEASE_ASSET_NAME}"
+        );
+        assert!(validate_release_asset_url(&valid, RELEASE_ASSET_NAME).is_ok());
+        for invalid in [
+            valid.replace("https:", "http:"),
+            valid.replace("github.com/", "github.com.evil.invalid/"),
+            valid.replace(
+                "Shaninjah/cybersouls-taskbar-quota-hud",
+                "upstream-ray/codex-usage-monitor",
+            ),
+            valid.replace("v1.9.2", ".."),
+            valid.replace("v1.9.2", "%2e%2e"),
+            valid.replace("v1.9.2", "v1.9.2/extra"),
+            format!("{valid}?query=1"),
+            format!("{valid}#fragment"),
+            valid.replace(RELEASE_ASSET_NAME, "other.exe"),
+        ] {
+            assert!(validate_release_asset_url(&invalid, RELEASE_ASSET_NAME).is_err());
+        }
     }
 
     #[test]

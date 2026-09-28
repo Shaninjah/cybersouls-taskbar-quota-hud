@@ -592,6 +592,7 @@ fn build_agent() -> Result<ureq::Agent, PollError> {
     let tls = native_tls::TlsConnector::new().map_err(|_| PollError::RequestFailed)?;
     Ok(ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(30))
+        .https_only(true)
         .tls_connector(std::sync::Arc::new(tls))
         .build())
 }
@@ -880,15 +881,15 @@ fn fetch_codex_usage(token: &str, account_id: Option<&str>) -> Result<UsageData,
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Codex usage endpoint request failed", error);
+            diagnose::log_error("Codex usage endpoint request failed", classified.category());
             return Err(classified);
         }
     };
 
     let response: CodexUsageResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error("unable to parse Codex usage response", error);
+        Err(_) => {
+            diagnose::log("unable to parse Codex usage response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1030,15 +1031,18 @@ fn fetch_antigravity_project(base_url: &str, token: &str) -> Result<Option<Strin
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Antigravity loadCodeAssist request failed", error);
+            diagnose::log_error(
+                "Antigravity loadCodeAssist request failed",
+                classified.category(),
+            );
             return Err(classified);
         }
     };
 
     let response: AntigravityLoadResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error("unable to parse Antigravity loadCodeAssist response", error);
+        Err(_) => {
+            diagnose::log("unable to parse Antigravity loadCodeAssist response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1067,18 +1071,18 @@ fn fetch_antigravity_model_quota(
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Antigravity fetchAvailableModels request failed", error);
+            diagnose::log_error(
+                "Antigravity fetchAvailableModels request failed",
+                classified.category(),
+            );
             return Err(classified);
         }
     };
 
     let response: AntigravityModelsResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error(
-                "unable to parse Antigravity fetchAvailableModels response",
-                error,
-            );
+        Err(_) => {
+            diagnose::log("unable to parse Antigravity fetchAvailableModels response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1111,18 +1115,18 @@ fn fetch_antigravity_quota_summary(
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Antigravity retrieveUserQuotaSummary request failed", error);
+            diagnose::log_error(
+                "Antigravity retrieveUserQuotaSummary request failed",
+                classified.category(),
+            );
             return Err(classified);
         }
     };
 
     let response: AntigravityQuotaSummaryResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error(
-                "unable to parse Antigravity retrieveUserQuotaSummary response",
-                error,
-            );
+        Err(_) => {
+            diagnose::log("unable to parse Antigravity retrieveUserQuotaSummary response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1251,7 +1255,7 @@ fn unix_to_system_time(unix_secs: Option<i64>) -> Option<SystemTime> {
     if secs < 0 {
         return None;
     }
-    Some(UNIX_EPOCH + Duration::from_secs(secs as u64))
+    UNIX_EPOCH.checked_add(Duration::from_secs(secs as u64))
 }
 
 struct Credentials {
@@ -1557,7 +1561,7 @@ fn parse_iso8601(s: Option<&str>) -> Option<SystemTime> {
     let formats = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"];
     for fmt in &formats {
         if let Ok(secs) = parse_datetime_to_unix(datetime_part, fmt) {
-            return Some(UNIX_EPOCH + Duration::from_secs(secs));
+            return UNIX_EPOCH.checked_add(Duration::from_secs(secs));
         }
     }
     None
@@ -1587,13 +1591,28 @@ fn parse_datetime_to_unix(s: &str, _fmt: &str) -> Result<u64, ()> {
     let min: u64 = time_parts[1].parse().map_err(|_| ())?;
     let sec: u64 = time_parts[2].parse().map_err(|_| ())?;
 
+    // External dates must not index outside the month table, underflow on day
+    // zero, overflow, or cause an unbounded loop over attacker-controlled years.
+    if !(1970..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || hour > 23
+        || min > 59
+        || sec > 59
+    {
+        return Err(());
+    }
+    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let max_day = month_days[month as usize] + u64::from(month == 2 && is_leap(year));
+    if day == 0 || day > max_day {
+        return Err(());
+    }
+
     // Days from year (using a simplified calculation for dates after 1970)
     let mut days: u64 = 0;
     for y in 1970..year {
         days += if is_leap(y) { 366 } else { 365 };
     }
 
-    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     for m in 1..month {
         days += month_days[m as usize];
         if m == 2 && is_leap(year) {
@@ -1775,6 +1794,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn external_reset_dates_reject_invalid_ranges_without_panicking() {
+        for date in [
+            "2026-13-01T00:00:00Z",
+            "2026-00-01T00:00:00Z",
+            "2026-01-00T00:00:00Z",
+            "2026-02-29T00:00:00Z",
+            "2026-01-01T24:00:00Z",
+            "2026-01-01T00:60:00Z",
+            "2026-01-01T00:00:60Z",
+            "1969-12-31T00:00:00Z",
+            "18446744073709551615-01-01T00:00:00Z",
+        ] {
+            assert!(parse_iso8601(Some(date)).is_none(), "{date}");
+        }
+        assert!(parse_iso8601(Some("2024-02-29T12:30:45Z")).is_some());
+        assert!(unix_to_system_time(Some(-1)).is_none());
+        assert!(unix_to_system_time(Some(i64::MAX)).is_none());
+    }
+
+    #[test]
+    fn provider_agent_rejects_unencrypted_requests_before_connecting() {
+        let error = build_agent()
+            .unwrap()
+            .get("http://example.invalid/")
+            .call()
+            .unwrap_err();
+        match error {
+            ureq::Error::Transport(error) => {
+                assert_eq!(error.kind(), ureq::ErrorKind::InsecureRequestHttpsOnly)
+            }
+            _ => panic!("Unencrypted request must be rejected before making a connection"),
+        }
+    }
+
+    #[test]
     fn claude_credentials_path_honors_custom_config_directory() {
         assert_eq!(
             windows_credentials_path_from(
@@ -1784,8 +1838,8 @@ mod tests {
             Some(PathBuf::from(r"D:\claude-config\.credentials.json"))
         );
         assert_eq!(
-            windows_credentials_path_from(None, Some(PathBuf::from(r"C:\Users\Ray"))),
-            Some(PathBuf::from(r"C:\Users\Ray\.claude\.credentials.json"))
+            windows_credentials_path_from(None, Some(PathBuf::from(r"C:\test-home"))),
+            Some(PathBuf::from(r"C:\test-home\.claude\.credentials.json"))
         );
     }
 
