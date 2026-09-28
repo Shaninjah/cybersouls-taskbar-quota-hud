@@ -23,14 +23,24 @@ Each Codex row (5h and 7d) compares **remaining quota with the precise time unti
 
 | Color | Weekly buffer (hours) | Dark theme | Light theme |
 |---|---|---|---|
-| Dark green | ≥ +36 | `#22C55E` | `#166534` |
-| Light green | ≥ 0 and < +36 | `#86EFAC` | `#15803D` |
-| Light yellow | ≥ −12 and < 0 | `#FEF08A` | `#A16207` |
-| Dark yellow | ≥ −24 and < −12 | `#EAB308` | `#854D0E` |
-| Light red | ≥ −48 and < −24 | `#FCA5A5` | `#DC2626` |
-| Dark red | < −48 | `#EF4444` | `#991B1B` |
+| Green 1 | ≥ +36 | `#22C55E` | `#166534` |
+| Green 2 | ≥ +24 and < +36 | `#4ACF65` | `#236A2B` |
+| Green 3 | ≥ +12 and < +24 | `#72D56C` | `#356E25` |
+| Green 4 | ≥ 0 and < +12 | `#9BDC72` | `#4B7221` |
+| Yellow 1 | ≥ −6 and < 0 | `#C6DD6B` | `#65741D` |
+| Yellow 2 | ≥ −12 and < −6 | `#DDE05B` | `#777019` |
+| Yellow 3 | ≥ −18 and < −12 | `#EACD47` | `#8A6817` |
+| Yellow 4 | ≥ −24 and < −18 | `#F2BC35` | `#9B5D14` |
+| Orange 1 | ≥ −30 and < −24 | `#F7A72B` | `#A65216` |
+| Orange 2 | ≥ −36 and < −30 | `#F99028` | `#AF471C` |
+| Orange 3 | ≥ −42 and < −36 | `#F77B2D` | `#B63C22` |
+| Orange 4 | ≥ −48 and < −42 | `#F36835` | `#BB3128` |
+| Red 1 | ≥ −60 and < −48 | `#EF593E` | `#BA2B2D` |
+| Red 2 | ≥ −72 and < −60 | `#EF5342` | `#B72530` |
+| Red 3 | ≥ −84 and < −72 | `#EF4D47` | `#AC2030` |
+| Red 4 | < −84 | `#EF474C` | `#991B2B` |
 
-Exactly on pace (`bufferHours = 0`) is light green. The +12-hour boundary remains light green too. For example, 50% remaining represents 84 hours of quota: with 48 hours until reset it is dark green (+36 hours), but with 120 hours until reset it is light red (−36 hours). 10% remaining with 120 hours until reset is dark red (−103.2 hours).
+The palette has **16 discrete shades: four green, four yellow, four orange and four red**, with smaller changes between adjacent shades. Exactly on pace (`bufferHours = 0`) is green. For example, 50% remaining represents 84 hours of quota: with 48 hours until reset it is Green 1 (+36 hours), but with 120 hours until reset it is Orange 2 (−36 hours). 10% remaining with 120 hours until reset is Red 4 (−103.2 hours). An exact boundary uses the less severe shade; any actual negative buffer enters yellow.
 
 The 5h row uses a five-hour cycle with proportionally scaled thresholds: weekly buffer thresholds are multiplied by `5h / 168h`, so +36 hours becomes about +1h04m17s. Each row uses its own reset timestamp. Calculations retain fractional hours and seconds without rounding to whole hours or days; a color changes when a band boundary is crossed. Colors repaint at least once a minute while a future Codex reset is known, without additional quota requests. Light-theme variants improve small-text contrast. Loading/error values and unknown or expired reset times use a neutral Codex color; no fixed-percentage fallback is used. Claude Code and Antigravity retain their existing colors.
 

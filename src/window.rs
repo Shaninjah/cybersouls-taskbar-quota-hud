@@ -4308,7 +4308,7 @@ mod tests {
         for mode in [QuotaDisplayMode::Remaining, QuotaDisplayMode::Used] {
             for (used, remaining, hex) in [
                 (20.0, 80.0, "#22C55E"),
-                (90.0, 10.0, "#FCA5A5"),
+                (90.0, 10.0, "#F99028"),
                 (30.1, 69.9, "#22C55E"),
             ] {
                 let displayed = codex_display_percentage(used, "50%", mode);
@@ -4449,7 +4449,7 @@ mod tests {
                             - sc(SEGMENT_GAP);
                         let green = Color::from_hex(if is_dark { "#22C55E" } else { "#166534" })
                             .to_colorref();
-                        let red = Color::from_hex(if is_dark { "#EF4444" } else { "#991B1B" })
+                        let red = Color::from_hex(if is_dark { "#EF474C" } else { "#991B2B" })
                             .to_colorref();
                         // Measure the end of the actual colored region on each bar.
                         let fill_end = |y, color| {
@@ -4549,7 +4549,7 @@ mod tests {
                 );
                 assert_eq!(
                     weekly.to_colorref(),
-                    Color::from_hex(if is_dark { "#EF4444" } else { "#991B1B" }).to_colorref()
+                    Color::from_hex(if is_dark { "#EF474C" } else { "#991B2B" }).to_colorref()
                 );
                 assert_eq!(
                     legacy_provider_display_percentage(language, 18.0),
