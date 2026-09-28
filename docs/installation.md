@@ -19,6 +19,7 @@ The installer is per-user and does not request elevation. It verifies the releas
 ## Settings and startup behavior
 
 - Upgrades preserve `%APPDATA%\CodexUsage\settings.json`.
+- The global Codex 5h/7d display mode is stored as `quota_display_mode: "remaining"` or `"used"` in that same file. Missing/invalid values default to `remaining`; other preferences are retained. Select it from the widget/tray **Quota display** submenu. This setting does not affect Claude Code or Antigravity.
 - Normal uninstall preserves settings so a later reinstall restores preferences.
 - `uninstall.ps1 -RemoveSettings` explicitly deletes the settings directory.
 - The installer does not enable startup automatically. If startup was already enabled, installation preserves that choice and updates the registry value to the stable installed executable. Users otherwise control startup from the application's settings menu.

@@ -11,6 +11,14 @@ AI quota monitoring directly in your Windows taskbar.
 
 <img src=".github/codex-usage-icon.png" alt="Cybersouls Taskbar Quota HUD 图标" width="96" height="96">
 
+## 额度显示
+
+右键点击任务栏组件或托盘图标，在 **额度显示** 中选择 **剩余额度**（默认）或 **已用额度**。这个设置同时应用于 Codex 的 5h 和 7d 两行，在所有语言中都生效；语言不再决定 Codex 显示剩余还是已用额度。
+
+已用 20% 时，剩余模式显示 80%，进度条填充 80%；已用模式显示 20%，进度条填充 20%。两个模式的颜色始终按剩余额度计算，所以均为青色。简体中文保留原有的紧凑重置时间布局，并分别显示“剩余”或“已用”。切换模式只更新已有数据的显示，不会重新请求额度。
+
+选择保存在现有 `%APPDATA%\CodexUsage\settings.json` 的 `quota_display_mode` 字段中，值为 `remaining` 或 `used`。旧设置中缺少该字段或值无效时，默认使用 `remaining`，其他偏好保持不变。这个选项仅影响 Codex；Claude Code 和 Antigravity 的显示行为保持不变。
+
 ![运行效果](.github/animation.gif)
 
 一款轻量级的 Windows 原生任务栏小组件，用于监控 Codex 用量，并可选择同时显示 Claude Code 和 Google Antigravity 用量。

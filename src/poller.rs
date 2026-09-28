@@ -1620,8 +1620,39 @@ pub fn format_line(
         return format_simplified_chinese_line(section, window);
     }
 
-    let pct = format!("{:.0}%", section.percentage);
-    let cd = format_countdown(section.resets_at, strings);
+    format_percentage_and_countdown(section.percentage, section.resets_at, strings)
+}
+
+/// Codex formatting uses the explicit display mode; language only selects layout.
+pub fn format_codex_line(
+    section: &UsageSection,
+    strings: Strings,
+    mode: crate::quota_display::QuotaDisplayMode,
+    simplified_chinese: bool,
+    window: UsageWindowKind,
+) -> String {
+    let percentage = crate::quota_display::display_percentage(section.percentage, mode);
+    if simplified_chinese {
+        let reset = section
+            .resets_at
+            .and_then(native_interop::system_time_to_local);
+        return format_simplified_chinese_values(
+            percentage,
+            reset,
+            window,
+            mode == crate::quota_display::QuotaDisplayMode::Remaining,
+        );
+    }
+    format_percentage_and_countdown(percentage, section.resets_at, strings)
+}
+
+fn format_percentage_and_countdown(
+    percentage: f64,
+    resets_at: Option<SystemTime>,
+    strings: Strings,
+) -> String {
+    let pct = format!("{percentage:.0}%");
+    let cd = format_countdown(resets_at, strings);
     if cd.is_empty() {
         pct
     } else {
@@ -1634,27 +1665,33 @@ fn format_simplified_chinese_line(section: &UsageSection, window: UsageWindowKin
     let reset = section
         .resets_at
         .and_then(native_interop::system_time_to_local);
-    format_simplified_chinese_values(remaining, reset, window)
+    format_simplified_chinese_values(remaining, reset, window, true)
 }
 
 fn format_simplified_chinese_values(
-    remaining: f64,
+    percentage: f64,
     reset: Option<windows::Win32::Foundation::SYSTEMTIME>,
     window: UsageWindowKind,
+    show_remaining_label: bool,
 ) -> String {
+    let prefix = if show_remaining_label {
+        "剩余"
+    } else {
+        "已用"
+    };
     let Some(reset) = reset else {
-        return format!("剩余{remaining:.0}%");
+        return format!("{prefix}{percentage:.0}%");
     };
     match window {
         UsageWindowKind::Session => {
             format!(
-                "剩余{remaining:.0}%  {:02}:{:02}重置",
+                "{prefix}{percentage:.0}%  {:02}:{:02}重置",
                 reset.wHour, reset.wMinute
             )
         }
         UsageWindowKind::Weekly => {
             format!(
-                "剩余{remaining:.0}%  {:02}/{:02}重置",
+                "{prefix}{percentage:.0}%  {:02}/{:02}重置",
                 reset.wMonth, reset.wDay
             )
         }
@@ -1850,7 +1887,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            format_simplified_chinese_values(82.0, Some(session_reset), UsageWindowKind::Session,),
+            format_simplified_chinese_values(
+                82.0,
+                Some(session_reset),
+                UsageWindowKind::Session,
+                true
+            ),
             "剩余82%  18:30重置"
         );
         let weekly_reset = windows::Win32::Foundation::SYSTEMTIME {
@@ -1859,8 +1901,128 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            format_simplified_chinese_values(97.0, Some(weekly_reset), UsageWindowKind::Weekly,),
+            format_simplified_chinese_values(
+                97.0,
+                Some(weekly_reset),
+                UsageWindowKind::Weekly,
+                true
+            ),
             "剩余97%  07/17重置"
+        );
+    }
+
+    #[test]
+    fn codex_text_respects_display_mode_in_every_language() {
+        use crate::quota_display::QuotaDisplayMode;
+        for language in crate::localization::LanguageId::ALL {
+            for (used, remaining) in [
+                (0.0, 100.0),
+                (20.0, 80.0),
+                (50.0, 50.0),
+                (80.0, 20.0),
+                (100.0, 0.0),
+            ] {
+                let section = UsageSection {
+                    percentage: used,
+                    resets_at: None,
+                };
+                for (mode, displayed) in [
+                    (QuotaDisplayMode::Remaining, remaining),
+                    (QuotaDisplayMode::Used, used),
+                ] {
+                    for window in [UsageWindowKind::Session, UsageWindowKind::Weekly] {
+                        let chinese =
+                            language == crate::localization::LanguageId::SimplifiedChinese;
+                        let text =
+                            format_codex_line(&section, language.strings(), mode, chinese, window);
+                        let prefix = if !chinese {
+                            ""
+                        } else if mode == QuotaDisplayMode::Remaining {
+                            "剩余"
+                        } else {
+                            "已用"
+                        };
+                        assert_eq!(
+                            text,
+                            format!("{prefix}{displayed:.0}%"),
+                            "{language:?}, {mode:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn codex_display_modes_preserve_countdowns_and_chinese_reset_layout() {
+        use crate::quota_display::QuotaDisplayMode;
+        let section = UsageSection {
+            percentage: 20.0,
+            resets_at: Some(SystemTime::now() + Duration::from_secs(3600)),
+        };
+        let strings = crate::localization::LanguageId::French.strings();
+        let remaining = format_codex_line(
+            &section,
+            strings,
+            QuotaDisplayMode::Remaining,
+            false,
+            UsageWindowKind::Session,
+        );
+        let used = format_codex_line(
+            &section,
+            strings,
+            QuotaDisplayMode::Used,
+            false,
+            UsageWindowKind::Session,
+        );
+        assert!(remaining.starts_with("80% · "));
+        assert!(used.starts_with("20% · "));
+        assert!(!remaining.split(" · ").nth(1).unwrap().is_empty());
+        let session_reset = windows::Win32::Foundation::SYSTEMTIME {
+            wHour: 18,
+            wMinute: 30,
+            ..Default::default()
+        };
+        let weekly_reset = windows::Win32::Foundation::SYSTEMTIME {
+            wMonth: 7,
+            wDay: 17,
+            ..Default::default()
+        };
+        assert_eq!(
+            format_simplified_chinese_values(
+                80.0,
+                Some(session_reset),
+                UsageWindowKind::Session,
+                true
+            ),
+            "剩余80%  18:30重置"
+        );
+        assert_eq!(
+            format_simplified_chinese_values(
+                20.0,
+                Some(session_reset),
+                UsageWindowKind::Session,
+                false
+            ),
+            "已用20%  18:30重置"
+        );
+        assert_eq!(
+            format_simplified_chinese_values(
+                80.0,
+                Some(weekly_reset),
+                UsageWindowKind::Weekly,
+                true
+            ),
+            "剩余80%  07/17重置"
+        );
+        assert_eq!(
+            format_simplified_chinese_values(
+                20.0,
+                Some(weekly_reset),
+                UsageWindowKind::Weekly,
+                false
+            ),
+            "已用20%  07/17重置"
         );
     }
 

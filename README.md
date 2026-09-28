@@ -24,7 +24,18 @@ Each Codex row (5h and 7d) selects its bar fill and value-text color independent
 | Amber | 20–39% | `#F59E0B` | `#92400E` |
 | Red | 0–19% | `#EF4444` | `#B91C1C` |
 
-Thresholds are continuous: 70%, 40%, and 20% are the lower bounds of their bands. Light-theme variants preserve the four identities while improving small-text contrast. API values are percentages **used**; colors use `100 - used`, clamped to 0–100, before localization or display conversion. Existing display behavior is preserved: Simplified Chinese shows remaining quota; other languages show used quota. Colors always describe remaining quota. Claude Code and Antigravity retain their existing colors. Loading/error values use a neutral Codex color.
+Thresholds are continuous: 70%, 40%, and 20% are the lower bounds of their bands. Light-theme variants preserve the four identities while improving small-text contrast. API values are percentages **used**; colors use `100 - used`, clamped to 0–100, before display conversion or rounding. Colors always describe remaining quota in either display mode. Claude Code and Antigravity retain their existing colors. Loading/error values use a neutral Codex color.
+
+## Quota display
+
+Right-click the widget or tray icon and choose **Quota display → Remaining quota / Used quota**. The radio selection applies to both Codex rows (5h and 7d), in every language:
+
+- **Remaining quota** (default): the bar and number show `100 - used`. A full quota is a full bar, which empties as quota is used.
+- **Used quota**: the bar and number show the percentage used, preserving the historical used-quota display.
+
+For 20% used, Remaining shows **80%** with an 80% cyan bar; Used shows **20%** with a 20% cyan bar. For 90% used, the values are **10%** and **90%**, respectively, and both are red. Switching modes updates cached display data immediately without fetching quotas. Reset counters and display rounding remain unchanged.
+
+The setting `"quota_display_mode": "remaining"` or `"used"` is saved in the existing `%APPDATA%\CodexUsage\settings.json`. Missing or invalid values default safely to `remaining`, including older settings files, while retaining other preferences. Language chooses text/layout, not the Codex display mode; Simplified Chinese keeps its compact reset times with the appropriate remaining/used label. This setting affects Codex only; Claude Code and Antigravity keep their historical display behavior.
 
 ## Fork version and branding
 

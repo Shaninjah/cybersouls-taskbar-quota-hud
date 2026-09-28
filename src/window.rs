@@ -26,6 +26,7 @@ use crate::native_interop::{
 };
 use crate::poller;
 use crate::quota_colors::codex_quota_color_from_remaining;
+use crate::quota_display::{display_percentage, QuotaDisplayMode};
 use crate::theme;
 use crate::tray_icon;
 use crate::updater::{self, InstallChannel, ReleaseDescriptor, UpdateCheckResult};
@@ -75,6 +76,7 @@ struct AppState {
     show_antigravity: bool,
     show_session_window: bool,
     show_weekly_window: bool,
+    quota_display_mode: QuotaDisplayMode,
     alert_threshold_percent: u8,
     notified_quota_windows: BTreeSet<String>,
 
@@ -141,6 +143,8 @@ const IDM_MODEL_CODEX: u16 = 61;
 const IDM_MODEL_ANTIGRAVITY: u16 = 62;
 const IDM_SHOW_SESSION_WINDOW: u16 = 71;
 const IDM_SHOW_WEEKLY_WINDOW: u16 = 72;
+const IDM_QUOTA_REMAINING: u16 = 90;
+const IDM_QUOTA_USED: u16 = 91;
 const IDM_ALERT_OFF: u16 = 80;
 const IDM_ALERT_10: u16 = 81;
 const IDM_ALERT_20: u16 = 82;
@@ -344,6 +348,8 @@ struct SettingsFile {
     #[serde(default = "default_show_usage_window")]
     show_weekly_window: bool,
     #[serde(default)]
+    quota_display_mode: QuotaDisplayMode,
+    #[serde(default)]
     alert_threshold_percent: u8,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     notified_quota_windows: Vec<String>,
@@ -363,6 +369,7 @@ impl Default for SettingsFile {
             show_antigravity: false,
             show_session_window: true,
             show_weekly_window: true,
+            quota_display_mode: QuotaDisplayMode::default(),
             alert_threshold_percent: 0,
             notified_quota_windows: Vec::new(),
         }
@@ -489,6 +496,7 @@ fn save_state_settings() {
             show_antigravity: s.show_antigravity,
             show_session_window: s.show_session_window,
             show_weekly_window: s.show_weekly_window,
+            quota_display_mode: s.quota_display_mode,
             alert_threshold_percent: s.alert_threshold_percent,
             notified_quota_windows: s.notified_quota_windows.iter().cloned().collect(),
         });
@@ -919,7 +927,7 @@ fn refresh_usage_texts(state: &mut AppState) {
     }
 
     let strings = state.language.strings();
-    let show_remaining = state.language == LanguageId::SimplifiedChinese;
+    let simplified_chinese_layout = state.language == LanguageId::SimplifiedChinese;
     let Some(data) = state.data.as_ref() else {
         return;
     };
@@ -928,13 +936,13 @@ fn refresh_usage_texts(state: &mut AppState) {
         state.session_text = poller::format_line(
             &claude_code.session,
             strings,
-            show_remaining,
+            simplified_chinese_layout,
             poller::UsageWindowKind::Session,
         );
         state.weekly_text = poller::format_line(
             &claude_code.weekly,
             strings,
-            show_remaining,
+            simplified_chinese_layout,
             poller::UsageWindowKind::Weekly,
         );
     } else if state.show_claude_code {
@@ -943,16 +951,18 @@ fn refresh_usage_texts(state: &mut AppState) {
     }
 
     if let Some(codex) = data.codex.as_ref() {
-        state.codex_session_text = poller::format_line(
+        state.codex_session_text = poller::format_codex_line(
             &codex.session,
             strings,
-            show_remaining,
+            state.quota_display_mode,
+            simplified_chinese_layout,
             poller::UsageWindowKind::Session,
         );
-        state.codex_weekly_text = poller::format_line(
+        state.codex_weekly_text = poller::format_codex_line(
             &codex.weekly,
             strings,
-            show_remaining,
+            state.quota_display_mode,
+            simplified_chinese_layout,
             poller::UsageWindowKind::Weekly,
         );
     } else if state.show_codex {
@@ -964,7 +974,7 @@ fn refresh_usage_texts(state: &mut AppState) {
         state.antigravity_session_text = poller::format_line(
             &antigravity.session,
             strings,
-            show_remaining,
+            simplified_chinese_layout,
             poller::UsageWindowKind::Session,
         );
         state.antigravity_weekly_text =
@@ -974,7 +984,7 @@ fn refresh_usage_texts(state: &mut AppState) {
                 poller::format_line(
                     &antigravity.weekly,
                     strings,
-                    show_remaining,
+                    simplified_chinese_layout,
                     poller::UsageWindowKind::Weekly,
                 )
             };
@@ -1469,11 +1479,21 @@ fn usage_layout_widths(language: LanguageId) -> (i32, i32) {
     }
 }
 
-fn usage_percent_for_display(language: LanguageId, used_percentage: f64) -> f64 {
+// Keep Claude/Antigravity's historical language-dependent display unchanged.
+fn legacy_provider_display_percentage(language: LanguageId, used_percentage: f64) -> f64 {
     if language == LanguageId::SimplifiedChinese {
         poller::remaining_percentage(used_percentage)
     } else {
         used_percentage.clamp(0.0, 100.0)
+    }
+}
+
+fn codex_display_percentage(used: f64, value_text: &str, mode: QuotaDisplayMode) -> f64 {
+    if value_text.contains('%') {
+        display_percentage(used, mode)
+    } else {
+        // Loading/error states must not look like a full remaining quota.
+        0.0
     }
 }
 
@@ -1712,6 +1732,7 @@ pub fn run() {
                 show_antigravity: settings.show_antigravity,
                 show_session_window: settings.show_session_window,
                 show_weekly_window: settings.show_weekly_window,
+                quota_display_mode: settings.quota_display_mode,
                 alert_threshold_percent: settings.alert_threshold_percent,
                 notified_quota_windows: settings.notified_quota_windows.into_iter().collect(),
                 data: None,
@@ -1824,6 +1845,7 @@ fn render_layered() {
         is_dark,
         embedded,
         language,
+        quota_display_mode,
         strings,
         session_pct,
         session_text,
@@ -1850,6 +1872,7 @@ fn render_layered() {
                 s.is_dark,
                 s.embedded,
                 s.language,
+                s.quota_display_mode,
                 s.language.strings(),
                 s.session_percent,
                 s.session_text.clone(),
@@ -1947,6 +1970,7 @@ fn render_layered() {
             &accent,
             &track,
             language,
+            quota_display_mode,
             strings,
             session_pct,
             &session_text,
@@ -2025,6 +2049,7 @@ fn paint_content(
     accent: &Color,
     track: &Color,
     language: LanguageId,
+    quota_display_mode: QuotaDisplayMode,
     strings: Strings,
     session_pct: f64,
     session_text: &str,
@@ -2049,12 +2074,16 @@ fn paint_content(
     let codex_session_accent = codex_row_color(codex_session_pct, codex_session_text, is_dark);
     let codex_weekly_accent = codex_row_color(codex_weekly_pct, codex_weekly_text, is_dark);
     unsafe {
-        let session_pct = usage_percent_for_display(language, session_pct);
-        let weekly_pct = usage_percent_for_display(language, weekly_pct);
-        let codex_session_pct = usage_percent_for_display(language, codex_session_pct);
-        let codex_weekly_pct = usage_percent_for_display(language, codex_weekly_pct);
-        let antigravity_session_pct = usage_percent_for_display(language, antigravity_session_pct);
-        let antigravity_weekly_pct = usage_percent_for_display(language, antigravity_weekly_pct);
+        let session_pct = legacy_provider_display_percentage(language, session_pct);
+        let weekly_pct = legacy_provider_display_percentage(language, weekly_pct);
+        let codex_session_pct =
+            codex_display_percentage(codex_session_pct, codex_session_text, quota_display_mode);
+        let codex_weekly_pct =
+            codex_display_percentage(codex_weekly_pct, codex_weekly_text, quota_display_mode);
+        let antigravity_session_pct =
+            legacy_provider_display_percentage(language, antigravity_session_pct);
+        let antigravity_weekly_pct =
+            legacy_provider_display_percentage(language, antigravity_weekly_pct);
         let (label_width, text_width) = usage_layout_widths(language);
 
         let client_rect = RECT {
@@ -3117,6 +3146,22 @@ unsafe extern "system" fn wnd_proc(
                     render_layered();
                     sync_tray_icons(hwnd);
                 }
+                IDM_QUOTA_REMAINING | IDM_QUOTA_USED => {
+                    {
+                        let mut state = lock_state();
+                        if let Some(s) = state.as_mut() {
+                            s.quota_display_mode = if id == IDM_QUOTA_USED {
+                                QuotaDisplayMode::Used
+                            } else {
+                                QuotaDisplayMode::Remaining
+                            };
+                            refresh_usage_texts(s);
+                        }
+                    }
+                    save_state_settings();
+                    render_layered();
+                    sync_tray_icons(hwnd);
+                }
                 IDM_ALERT_OFF | IDM_ALERT_10 | IDM_ALERT_20 | IDM_ALERT_30 => {
                     let threshold = match id {
                         IDM_ALERT_10 => 10,
@@ -3259,6 +3304,36 @@ unsafe extern "system" fn wnd_proc(
     }
 }
 
+fn create_quota_display_menu(strings: Strings, mode: QuotaDisplayMode) -> HMENU {
+    unsafe {
+        let menu = CreatePopupMenu().unwrap();
+        for (id, label) in [
+            (IDM_QUOTA_REMAINING, strings.remaining_quota),
+            (IDM_QUOTA_USED, strings.used_quota),
+        ] {
+            let wide = native_interop::wide_str(label);
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                id as usize,
+                PCWSTR::from_raw(wide.as_ptr()),
+            );
+        }
+        let selected = match mode {
+            QuotaDisplayMode::Remaining => IDM_QUOTA_REMAINING,
+            QuotaDisplayMode::Used => IDM_QUOTA_USED,
+        };
+        let _ = CheckMenuRadioItem(
+            menu,
+            IDM_QUOTA_REMAINING as u32,
+            IDM_QUOTA_USED as u32,
+            selected as u32,
+            MF_BYCOMMAND.0,
+        );
+        menu
+    }
+}
+
 fn show_context_menu(hwnd: HWND) {
     unsafe {
         let (
@@ -3275,6 +3350,7 @@ fn show_context_menu(hwnd: HWND) {
             show_antigravity,
             show_session_window,
             show_weekly_window,
+            quota_display_mode,
             alert_threshold_percent,
         ) = {
             let state = lock_state();
@@ -3293,6 +3369,7 @@ fn show_context_menu(hwnd: HWND) {
                     s.show_antigravity,
                     s.show_session_window,
                     s.show_weekly_window,
+                    s.quota_display_mode,
                     s.alert_threshold_percent,
                 ),
                 None => (
@@ -3309,6 +3386,7 @@ fn show_context_menu(hwnd: HWND) {
                     false,
                     true,
                     true,
+                    QuotaDisplayMode::default(),
                     0,
                 ),
             }
@@ -3460,6 +3538,16 @@ fn show_context_menu(hwnd: HWND) {
             MF_POPUP,
             usage_menu.0 as usize,
             PCWSTR::from_raw(usage_label.as_ptr()),
+        );
+
+        // The explicit mode affects both Codex rows only.
+        let quota_menu = create_quota_display_menu(strings, quota_display_mode);
+        let quota_label = native_interop::wide_str(strings.quota_display);
+        let _ = AppendMenuW(
+            menu,
+            MF_POPUP,
+            quota_menu.0 as usize,
+            PCWSTR::from_raw(quota_label.as_ptr()),
         );
 
         // Low-quota alert threshold submenu. Zero means opt-out.
@@ -3666,6 +3754,7 @@ fn paint(hdc: HDC, hwnd: HWND) {
     let (
         is_dark,
         language,
+        quota_display_mode,
         strings,
         session_pct,
         session_text,
@@ -3690,6 +3779,7 @@ fn paint(hdc: HDC, hwnd: HWND) {
             Some(s) => (
                 s.is_dark,
                 s.language,
+                s.quota_display_mode,
                 s.language.strings(),
                 s.session_percent,
                 s.session_text.clone(),
@@ -3755,6 +3845,7 @@ fn paint(hdc: HDC, hwnd: HWND) {
             &accent,
             &track,
             language,
+            quota_display_mode,
             strings,
             session_pct,
             &session_text,
@@ -4034,92 +4125,321 @@ mod tests {
     }
 
     #[test]
-    fn paints_independent_codex_bar_and_text_colors_before_localization() {
-        for is_dark in [true, false] {
-            for language in [LanguageId::English, LanguageId::SimplifiedChinese] {
+    fn quota_display_settings_default_and_legacy_values_preserve_preferences() {
+        assert_eq!(
+            SettingsFile::default().quota_display_mode,
+            QuotaDisplayMode::Remaining
+        );
+        let empty: SettingsFile = serde_json::from_str("{}").unwrap();
+        assert_eq!(empty.quota_display_mode, QuotaDisplayMode::Remaining);
+        let old: SettingsFile = serde_json::from_str(&test_settings_json("fr")).unwrap();
+        assert_eq!(old.quota_display_mode, QuotaDisplayMode::Remaining);
+        assert_eq!(old.tray_offset, 321);
+        assert_eq!(old.taskbar_index, 1);
+        assert_eq!(old.poll_interval_ms, 60_000);
+        assert_eq!(old.language.as_deref(), Some("fr"));
+        assert!(old.show_codex);
+        assert!(!old.show_claude_code);
+    }
+
+    #[test]
+    fn quota_display_settings_roundtrip_both_modes_and_invalid_values() {
+        for (value, mode) in [
+            ("remaining", QuotaDisplayMode::Remaining),
+            ("used", QuotaDisplayMode::Used),
+        ] {
+            let settings: SettingsFile = serde_json::from_value(serde_json::json!({
+                "quota_display_mode": value,
+                "tray_offset": 321,
+                "show_weekly_window": false,
+            }))
+            .unwrap();
+            assert_eq!(settings.quota_display_mode, mode);
+            let encoded = serde_json::to_value(&settings).unwrap();
+            assert_eq!(encoded["quota_display_mode"], value);
+            let restored: SettingsFile = serde_json::from_value(encoded).unwrap();
+            assert_eq!(restored.quota_display_mode, mode);
+            assert_eq!(restored.tray_offset, 321);
+            assert!(!restored.show_weekly_window);
+        }
+        for value in [
+            serde_json::json!("invalid"),
+            serde_json::json!(null),
+            serde_json::json!(7),
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            let settings: SettingsFile = serde_json::from_value(serde_json::json!({
+                "quota_display_mode": value,
+                "tray_offset": 321,
+            }))
+            .unwrap();
+            assert_eq!(settings.quota_display_mode, QuotaDisplayMode::Remaining);
+            assert_eq!(settings.tray_offset, 321);
+        }
+    }
+
+    #[test]
+    fn quota_display_menu_checks_exactly_one_mode_in_every_language() {
+        for language in LanguageId::ALL {
+            let strings = language.strings();
+            assert!(!strings.quota_display.is_empty());
+            assert_ne!(strings.remaining_quota, strings.used_quota);
+            for mode in [QuotaDisplayMode::Remaining, QuotaDisplayMode::Used] {
+                let menu = create_quota_display_menu(strings, mode);
                 unsafe {
-                    let width = total_widget_width_for(1, language);
-                    let height = sc(WIDGET_HEIGHT);
-                    let hdc = CreateCompatibleDC(HDC::default());
-                    assert!(!hdc.is_invalid());
-                    let bitmap_info = BITMAPINFO {
-                        bmiHeader: BITMAPINFOHEADER {
-                            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                            biWidth: width,
-                            biHeight: -height,
-                            biPlanes: 1,
-                            biBitCount: 32,
-                            biCompression: BI_RGB.0,
-                            ..Default::default()
+                    let remaining = GetMenuState(menu, IDM_QUOTA_REMAINING as u32, MF_BYCOMMAND);
+                    let used = GetMenuState(menu, IDM_QUOTA_USED as u32, MF_BYCOMMAND);
+                    let _ = DestroyMenu(menu);
+                    assert_ne!(remaining, u32::MAX);
+                    assert_ne!(used, u32::MAX);
+                    assert_eq!(
+                        remaining & MF_CHECKED.0 != 0,
+                        mode == QuotaDisplayMode::Remaining
+                    );
+                    assert_eq!(used & MF_CHECKED.0 != 0, mode == QuotaDisplayMode::Used);
+                }
+            }
+        }
+        let fr = LanguageId::French.strings();
+        assert_eq!(
+            (fr.quota_display, fr.remaining_quota, fr.used_quota),
+            ("Affichage du quota", "Quota restant", "Quota consommé")
+        );
+        let en = LanguageId::English.strings();
+        assert_eq!(
+            (en.quota_display, en.remaining_quota, en.used_quota),
+            ("Quota display", "Remaining quota", "Used quota")
+        );
+    }
+
+    #[test]
+    fn quota_display_mode_persists_across_settings_reload() {
+        let base = std::env::temp_dir().join(format!(
+            "cybersouls-quota-mode-settings-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let current = base.join("settings.json");
+        let legacy = base.join("missing-legacy.json");
+        for mode in [QuotaDisplayMode::Remaining, QuotaDisplayMode::Used] {
+            let mut settings: SettingsFile =
+                serde_json::from_str(&test_settings_json("zh-CN")).unwrap();
+            settings.quota_display_mode = mode;
+            std::fs::write(&current, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+            let (restored, migrated) = load_settings_from_paths(&current, &legacy).unwrap();
+            assert!(!migrated);
+            assert_eq!(restored.quota_display_mode, mode);
+            assert_eq!(restored.language.as_deref(), Some("zh-CN"));
+            assert_eq!(restored.tray_offset, 321);
+            assert_eq!(restored.taskbar_index, 1);
+            assert_eq!(restored.poll_interval_ms, 60_000);
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn codex_modes_keep_color_semantics_and_neutral_error_states() {
+        for mode in [QuotaDisplayMode::Remaining, QuotaDisplayMode::Used] {
+            for (used, remaining, hex) in [
+                (20.0, 80.0, "#22D3EE"),
+                (90.0, 10.0, "#EF4444"),
+                (30.1, 69.9, "#3B82F6"),
+            ] {
+                let displayed = codex_display_percentage(used, "50%", mode);
+                assert_eq!(
+                    displayed,
+                    if mode == QuotaDisplayMode::Remaining {
+                        remaining
+                    } else {
+                        used
+                    }
+                );
+                assert_eq!(
+                    codex_row_color(used, &format!("{displayed:.0}%"), true).to_colorref(),
+                    Color::from_hex(hex).to_colorref()
+                );
+            }
+            for text in ["--", "...", "!", "NET", "429", "ERR"] {
+                assert_eq!(codex_display_percentage(0.0, text, mode), 0.0);
+                assert_eq!(
+                    codex_row_color(0.0, text, true).to_colorref(),
+                    codex_accent_color(true).to_colorref()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn paints_codex_widths_and_colors_in_both_display_modes() {
+        for is_dark in [true, false] {
+            for language in [
+                LanguageId::English,
+                LanguageId::French,
+                LanguageId::SimplifiedChinese,
+            ] {
+                for mode in [QuotaDisplayMode::Remaining, QuotaDisplayMode::Used] {
+                    let chinese = language == LanguageId::SimplifiedChinese;
+                    let session_text = poller::format_codex_line(
+                        &crate::models::UsageSection {
+                            percentage: 18.0,
+                            resets_at: None,
                         },
-                        ..Default::default()
-                    };
-                    let mut bits = std::ptr::null_mut();
-                    let bitmap =
-                        CreateDIBSection(hdc, &bitmap_info, DIB_RGB_COLORS, &mut bits, None, 0)
-                            .unwrap();
-                    let old_bitmap = SelectObject(hdc, bitmap);
-                    let bg = Color::from_hex(if is_dark { "#1C1C1C" } else { "#F3F3F3" });
-                    let text = Color::from_hex(if is_dark { "#888888" } else { "#404040" });
-                    paint_content(
-                        hdc,
-                        width,
-                        height,
-                        is_dark,
-                        &bg,
-                        &text,
-                        &claude_accent_color(),
-                        &Color::from_hex("#444444"),
-                        language,
                         language.strings(),
-                        0.0,
-                        "--",
-                        0.0,
-                        "--",
-                        18.0,
-                        "18%",
-                        83.0,
-                        "83%",
-                        0.0,
-                        "--",
-                        0.0,
-                        "--",
-                        false,
-                        true,
-                        false,
-                        true,
-                        true,
-                        &antigravity_accent_color(),
+                        mode,
+                        chinese,
+                        poller::UsageWindowKind::Session,
                     );
-                    let (label_width, _) = usage_layout_widths(language);
-                    let bar_x = sc(LEFT_DIVIDER_W)
-                        + sc(DIVIDER_RIGHT_MARGIN)
-                        + sc(label_width)
-                        + sc(LABEL_RIGHT_MARGIN);
-                    let row2_y = height - sc(5) - sc(SEGMENT_H);
-                    let row1_y = row2_y - sc(10) - sc(SEGMENT_H);
-                    let session_fill = GetPixel(hdc, bar_x + sc(4), row1_y + sc(SEGMENT_H) / 2).0;
-                    let weekly_fill = GetPixel(hdc, bar_x + sc(4), row2_y + sc(SEGMENT_H) / 2).0;
-                    let weekly_text_color = GetTextColor(hdc).0;
-                    let cyan =
-                        Color::from_hex(if is_dark { "#22D3EE" } else { "#0E7490" }).to_colorref();
-                    let red =
-                        Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" }).to_colorref();
-                    let _ = SelectObject(hdc, old_bitmap);
-                    let _ = DeleteObject(bitmap);
-                    let _ = DeleteDC(hdc);
-                    assert_eq!(
-                        session_fill, cyan,
-                        "5h, dark={is_dark}, language={language:?}"
+                    let weekly_text = poller::format_codex_line(
+                        &crate::models::UsageSection {
+                            percentage: 83.0,
+                            resets_at: None,
+                        },
+                        language.strings(),
+                        mode,
+                        chinese,
+                        poller::UsageWindowKind::Weekly,
                     );
-                    assert_eq!(
-                        weekly_fill, red,
-                        "7d, dark={is_dark}, language={language:?}"
-                    );
-                    assert_eq!(
-                        weekly_text_color, red,
-                        "single-provider values must also be colored"
-                    );
+                    unsafe {
+                        let width = total_widget_width_for(1, language);
+                        let height = sc(WIDGET_HEIGHT);
+                        let hdc = CreateCompatibleDC(HDC::default());
+                        assert!(!hdc.is_invalid());
+                        let bitmap_info = BITMAPINFO {
+                            bmiHeader: BITMAPINFOHEADER {
+                                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                                biWidth: width,
+                                biHeight: -height,
+                                biPlanes: 1,
+                                biBitCount: 32,
+                                biCompression: BI_RGB.0,
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        };
+                        let mut bits = std::ptr::null_mut();
+                        let bitmap =
+                            CreateDIBSection(hdc, &bitmap_info, DIB_RGB_COLORS, &mut bits, None, 0)
+                                .unwrap();
+                        let old_bitmap = SelectObject(hdc, bitmap);
+                        let bg = Color::from_hex(if is_dark { "#1C1C1C" } else { "#F3F3F3" });
+                        let text = Color::from_hex(if is_dark { "#888888" } else { "#404040" });
+                        paint_content(
+                            hdc,
+                            width,
+                            height,
+                            is_dark,
+                            &bg,
+                            &text,
+                            &claude_accent_color(),
+                            &Color::from_hex("#444444"),
+                            language,
+                            mode,
+                            language.strings(),
+                            0.0,
+                            "--",
+                            0.0,
+                            "--",
+                            18.0,
+                            &session_text,
+                            83.0,
+                            &weekly_text,
+                            0.0,
+                            "--",
+                            0.0,
+                            "--",
+                            false,
+                            true,
+                            false,
+                            true,
+                            true,
+                            &antigravity_accent_color(),
+                        );
+                        let (label_width, _) = usage_layout_widths(language);
+                        let bar_x = sc(LEFT_DIVIDER_W)
+                            + sc(DIVIDER_RIGHT_MARGIN)
+                            + sc(label_width)
+                            + sc(LABEL_RIGHT_MARGIN);
+                        let row2_y = height - sc(5) - sc(SEGMENT_H);
+                        let row1_y = row2_y - sc(10) - sc(SEGMENT_H);
+                        let session_fill =
+                            GetPixel(hdc, bar_x + sc(4), row1_y + sc(SEGMENT_H) / 2).0;
+                        let weekly_fill =
+                            GetPixel(hdc, bar_x + sc(4), row2_y + sc(SEGMENT_H) / 2).0;
+                        let weekly_text_color = GetTextColor(hdc).0;
+                        let bar_width = (sc(SEGMENT_W) + sc(SEGMENT_GAP))
+                            * row_bar_segment_count(1)
+                            - sc(SEGMENT_GAP);
+                        let cyan = Color::from_hex(if is_dark { "#22D3EE" } else { "#0E7490" })
+                            .to_colorref();
+                        let red = Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" })
+                            .to_colorref();
+                        // Measure the end of the actual colored region on each bar.
+                        let fill_end = |y, color| {
+                            (0..bar_width)
+                                .filter(|x| {
+                                    GetPixel(hdc, bar_x + x, y + sc(SEGMENT_H) / 2).0 == color
+                                })
+                                .max()
+                                .map_or(0, |x| x + 1)
+                        };
+                        let session_width = fill_end(row1_y, cyan);
+                        let weekly_width = fill_end(row2_y, red);
+                        let session_middle =
+                            GetPixel(hdc, bar_x + bar_width / 2, row1_y + sc(SEGMENT_H) / 2).0;
+                        let weekly_middle =
+                            GetPixel(hdc, bar_x + bar_width / 2, row2_y + sc(SEGMENT_H) / 2).0;
+                        let (session_percentage, weekly_percentage) = match mode {
+                            QuotaDisplayMode::Remaining => (82.0, 17.0),
+                            QuotaDisplayMode::Used => (18.0, 83.0),
+                        };
+                        let _ = SelectObject(hdc, old_bitmap);
+                        let _ = DeleteObject(bitmap);
+                        let _ = DeleteDC(hdc);
+                        assert_eq!(
+                            session_width,
+                            (bar_width as f64 * session_percentage / 100.0).round() as i32,
+                            "5h width, {mode:?}, {language:?}"
+                        );
+                        assert_eq!(
+                            weekly_width,
+                            (bar_width as f64 * weekly_percentage / 100.0).round() as i32,
+                            "7d width, {mode:?}, {language:?}"
+                        );
+                        let track = Color::from_hex("#444444").to_colorref();
+                        assert_eq!(
+                            session_middle,
+                            if mode == QuotaDisplayMode::Remaining {
+                                cyan
+                            } else {
+                                track
+                            }
+                        );
+                        assert_eq!(
+                            weekly_middle,
+                            if mode == QuotaDisplayMode::Used {
+                                red
+                            } else {
+                                track
+                            }
+                        );
+                        assert_eq!(
+                            session_fill, cyan,
+                            "5h, dark={is_dark}, language={language:?}"
+                        );
+                        assert_eq!(
+                            weekly_fill, red,
+                            "7d, dark={is_dark}, language={language:?}"
+                        );
+                        assert_eq!(
+                            weekly_text_color, red,
+                            "single-provider values must also be colored"
+                        );
+                    }
                 }
             }
         }
@@ -4144,7 +4464,7 @@ mod tests {
                     Color::from_hex(if is_dark { "#EF4444" } else { "#B91C1C" }).to_colorref()
                 );
                 assert_eq!(
-                    usage_percent_for_display(language, 18.0),
+                    legacy_provider_display_percentage(language, 18.0),
                     if language == LanguageId::SimplifiedChinese {
                         82.0
                     } else {
