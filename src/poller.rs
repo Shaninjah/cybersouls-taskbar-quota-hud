@@ -592,6 +592,7 @@ fn build_agent() -> Result<ureq::Agent, PollError> {
     let tls = native_tls::TlsConnector::new().map_err(|_| PollError::RequestFailed)?;
     Ok(ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(30))
+        .https_only(true)
         .tls_connector(std::sync::Arc::new(tls))
         .build())
 }
@@ -880,15 +881,15 @@ fn fetch_codex_usage(token: &str, account_id: Option<&str>) -> Result<UsageData,
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Codex usage endpoint request failed", error);
+            diagnose::log_error("Codex usage endpoint request failed", classified.category());
             return Err(classified);
         }
     };
 
     let response: CodexUsageResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error("unable to parse Codex usage response", error);
+        Err(_) => {
+            diagnose::log("unable to parse Codex usage response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1030,15 +1031,18 @@ fn fetch_antigravity_project(base_url: &str, token: &str) -> Result<Option<Strin
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Antigravity loadCodeAssist request failed", error);
+            diagnose::log_error(
+                "Antigravity loadCodeAssist request failed",
+                classified.category(),
+            );
             return Err(classified);
         }
     };
 
     let response: AntigravityLoadResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error("unable to parse Antigravity loadCodeAssist response", error);
+        Err(_) => {
+            diagnose::log("unable to parse Antigravity loadCodeAssist response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1067,18 +1071,18 @@ fn fetch_antigravity_model_quota(
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Antigravity fetchAvailableModels request failed", error);
+            diagnose::log_error(
+                "Antigravity fetchAvailableModels request failed",
+                classified.category(),
+            );
             return Err(classified);
         }
     };
 
     let response: AntigravityModelsResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error(
-                "unable to parse Antigravity fetchAvailableModels response",
-                error,
-            );
+        Err(_) => {
+            diagnose::log("unable to parse Antigravity fetchAvailableModels response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1111,18 +1115,18 @@ fn fetch_antigravity_quota_summary(
         Ok(resp) => resp,
         Err(error) => {
             let classified = classify_ureq_error(&error);
-            diagnose::log_error("Antigravity retrieveUserQuotaSummary request failed", error);
+            diagnose::log_error(
+                "Antigravity retrieveUserQuotaSummary request failed",
+                classified.category(),
+            );
             return Err(classified);
         }
     };
 
     let response: AntigravityQuotaSummaryResponse = match resp.into_json() {
         Ok(response) => response,
-        Err(error) => {
-            diagnose::log_error(
-                "unable to parse Antigravity retrieveUserQuotaSummary response",
-                error,
-            );
+        Err(_) => {
+            diagnose::log("unable to parse Antigravity retrieveUserQuotaSummary response");
             return Err(PollError::RequestFailed);
         }
     };
@@ -1251,7 +1255,7 @@ fn unix_to_system_time(unix_secs: Option<i64>) -> Option<SystemTime> {
     if secs < 0 {
         return None;
     }
-    Some(UNIX_EPOCH + Duration::from_secs(secs as u64))
+    UNIX_EPOCH.checked_add(Duration::from_secs(secs as u64))
 }
 
 struct Credentials {
@@ -1557,7 +1561,7 @@ fn parse_iso8601(s: Option<&str>) -> Option<SystemTime> {
     let formats = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"];
     for fmt in &formats {
         if let Ok(secs) = parse_datetime_to_unix(datetime_part, fmt) {
-            return Some(UNIX_EPOCH + Duration::from_secs(secs));
+            return UNIX_EPOCH.checked_add(Duration::from_secs(secs));
         }
     }
     None
@@ -1587,13 +1591,28 @@ fn parse_datetime_to_unix(s: &str, _fmt: &str) -> Result<u64, ()> {
     let min: u64 = time_parts[1].parse().map_err(|_| ())?;
     let sec: u64 = time_parts[2].parse().map_err(|_| ())?;
 
+    // External dates must not index outside the month table, underflow on day
+    // zero, overflow, or cause an unbounded loop over attacker-controlled years.
+    if !(1970..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || hour > 23
+        || min > 59
+        || sec > 59
+    {
+        return Err(());
+    }
+    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let max_day = month_days[month as usize] + u64::from(month == 2 && is_leap(year));
+    if day == 0 || day > max_day {
+        return Err(());
+    }
+
     // Days from year (using a simplified calculation for dates after 1970)
     let mut days: u64 = 0;
     for y in 1970..year {
         days += if is_leap(y) { 366 } else { 365 };
     }
 
-    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     for m in 1..month {
         days += month_days[m as usize];
         if m == 2 && is_leap(year) {
@@ -1620,8 +1639,39 @@ pub fn format_line(
         return format_simplified_chinese_line(section, window);
     }
 
-    let pct = format!("{:.0}%", section.percentage);
-    let cd = format_countdown(section.resets_at, strings);
+    format_percentage_and_countdown(section.percentage, section.resets_at, strings)
+}
+
+/// Codex formatting uses the explicit display mode; language only selects layout.
+pub fn format_codex_line(
+    section: &UsageSection,
+    strings: Strings,
+    mode: crate::quota_display::QuotaDisplayMode,
+    simplified_chinese: bool,
+    window: UsageWindowKind,
+) -> String {
+    let percentage = crate::quota_display::display_percentage(section.percentage, mode);
+    if simplified_chinese {
+        let reset = section
+            .resets_at
+            .and_then(native_interop::system_time_to_local);
+        return format_simplified_chinese_values(
+            percentage,
+            reset,
+            window,
+            mode == crate::quota_display::QuotaDisplayMode::Remaining,
+        );
+    }
+    format_percentage_and_countdown(percentage, section.resets_at, strings)
+}
+
+fn format_percentage_and_countdown(
+    percentage: f64,
+    resets_at: Option<SystemTime>,
+    strings: Strings,
+) -> String {
+    let pct = format!("{percentage:.0}%");
+    let cd = format_countdown(resets_at, strings);
     if cd.is_empty() {
         pct
     } else {
@@ -1634,27 +1684,33 @@ fn format_simplified_chinese_line(section: &UsageSection, window: UsageWindowKin
     let reset = section
         .resets_at
         .and_then(native_interop::system_time_to_local);
-    format_simplified_chinese_values(remaining, reset, window)
+    format_simplified_chinese_values(remaining, reset, window, true)
 }
 
 fn format_simplified_chinese_values(
-    remaining: f64,
+    percentage: f64,
     reset: Option<windows::Win32::Foundation::SYSTEMTIME>,
     window: UsageWindowKind,
+    show_remaining_label: bool,
 ) -> String {
+    let prefix = if show_remaining_label {
+        "剩余"
+    } else {
+        "已用"
+    };
     let Some(reset) = reset else {
-        return format!("剩余{remaining:.0}%");
+        return format!("{prefix}{percentage:.0}%");
     };
     match window {
         UsageWindowKind::Session => {
             format!(
-                "剩余{remaining:.0}%  {:02}:{:02}重置",
+                "{prefix}{percentage:.0}%  {:02}:{:02}重置",
                 reset.wHour, reset.wMinute
             )
         }
         UsageWindowKind::Weekly => {
             format!(
-                "剩余{remaining:.0}%  {:02}/{:02}重置",
+                "{prefix}{percentage:.0}%  {:02}/{:02}重置",
                 reset.wMonth, reset.wDay
             )
         }
@@ -1738,17 +1794,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn external_reset_dates_reject_invalid_ranges_without_panicking() {
+        for date in [
+            "2026-13-01T00:00:00Z",
+            "2026-00-01T00:00:00Z",
+            "2026-01-00T00:00:00Z",
+            "2026-02-29T00:00:00Z",
+            "2026-01-01T24:00:00Z",
+            "2026-01-01T00:60:00Z",
+            "2026-01-01T00:00:60Z",
+            "1969-12-31T00:00:00Z",
+            "18446744073709551615-01-01T00:00:00Z",
+        ] {
+            assert!(parse_iso8601(Some(date)).is_none(), "{date}");
+        }
+        assert!(parse_iso8601(Some("2024-02-29T12:30:45Z")).is_some());
+        assert!(unix_to_system_time(Some(-1)).is_none());
+        assert!(unix_to_system_time(Some(i64::MAX)).is_none());
+    }
+
+    #[test]
+    fn provider_agent_rejects_unencrypted_requests_before_connecting() {
+        let error = build_agent()
+            .unwrap()
+            .get("http://example.invalid/")
+            .call()
+            .unwrap_err();
+        match error {
+            ureq::Error::Transport(error) => {
+                assert_eq!(error.kind(), ureq::ErrorKind::InsecureRequestHttpsOnly)
+            }
+            _ => panic!("Unencrypted request must be rejected before making a connection"),
+        }
+    }
+
+    #[test]
     fn claude_credentials_path_honors_custom_config_directory() {
         assert_eq!(
             windows_credentials_path_from(
                 Some(PathBuf::from(r"D:\claude-config")),
-                Some(PathBuf::from(r"C:\Users\Ray")),
+                Some(PathBuf::from(r"C:\test-home")),
             ),
             Some(PathBuf::from(r"D:\claude-config\.credentials.json"))
         );
         assert_eq!(
-            windows_credentials_path_from(None, Some(PathBuf::from(r"C:\Users\Ray"))),
-            Some(PathBuf::from(r"C:\Users\Ray\.claude\.credentials.json"))
+            windows_credentials_path_from(None, Some(PathBuf::from(r"C:\test-home"))),
+            Some(PathBuf::from(r"C:\test-home\.claude\.credentials.json"))
         );
     }
 
@@ -1850,7 +1941,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            format_simplified_chinese_values(82.0, Some(session_reset), UsageWindowKind::Session,),
+            format_simplified_chinese_values(
+                82.0,
+                Some(session_reset),
+                UsageWindowKind::Session,
+                true
+            ),
             "剩余82%  18:30重置"
         );
         let weekly_reset = windows::Win32::Foundation::SYSTEMTIME {
@@ -1859,8 +1955,128 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            format_simplified_chinese_values(97.0, Some(weekly_reset), UsageWindowKind::Weekly,),
+            format_simplified_chinese_values(
+                97.0,
+                Some(weekly_reset),
+                UsageWindowKind::Weekly,
+                true
+            ),
             "剩余97%  07/17重置"
+        );
+    }
+
+    #[test]
+    fn codex_text_respects_display_mode_in_every_language() {
+        use crate::quota_display::QuotaDisplayMode;
+        for language in crate::localization::LanguageId::ALL {
+            for (used, remaining) in [
+                (0.0, 100.0),
+                (20.0, 80.0),
+                (50.0, 50.0),
+                (80.0, 20.0),
+                (100.0, 0.0),
+            ] {
+                let section = UsageSection {
+                    percentage: used,
+                    resets_at: None,
+                };
+                for (mode, displayed) in [
+                    (QuotaDisplayMode::Remaining, remaining),
+                    (QuotaDisplayMode::Used, used),
+                ] {
+                    for window in [UsageWindowKind::Session, UsageWindowKind::Weekly] {
+                        let chinese =
+                            language == crate::localization::LanguageId::SimplifiedChinese;
+                        let text =
+                            format_codex_line(&section, language.strings(), mode, chinese, window);
+                        let prefix = if !chinese {
+                            ""
+                        } else if mode == QuotaDisplayMode::Remaining {
+                            "剩余"
+                        } else {
+                            "已用"
+                        };
+                        assert_eq!(
+                            text,
+                            format!("{prefix}{displayed:.0}%"),
+                            "{language:?}, {mode:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn codex_display_modes_preserve_countdowns_and_chinese_reset_layout() {
+        use crate::quota_display::QuotaDisplayMode;
+        let section = UsageSection {
+            percentage: 20.0,
+            resets_at: Some(SystemTime::now() + Duration::from_secs(3600)),
+        };
+        let strings = crate::localization::LanguageId::French.strings();
+        let remaining = format_codex_line(
+            &section,
+            strings,
+            QuotaDisplayMode::Remaining,
+            false,
+            UsageWindowKind::Session,
+        );
+        let used = format_codex_line(
+            &section,
+            strings,
+            QuotaDisplayMode::Used,
+            false,
+            UsageWindowKind::Session,
+        );
+        assert!(remaining.starts_with("80% · "));
+        assert!(used.starts_with("20% · "));
+        assert!(!remaining.split(" · ").nth(1).unwrap().is_empty());
+        let session_reset = windows::Win32::Foundation::SYSTEMTIME {
+            wHour: 18,
+            wMinute: 30,
+            ..Default::default()
+        };
+        let weekly_reset = windows::Win32::Foundation::SYSTEMTIME {
+            wMonth: 7,
+            wDay: 17,
+            ..Default::default()
+        };
+        assert_eq!(
+            format_simplified_chinese_values(
+                80.0,
+                Some(session_reset),
+                UsageWindowKind::Session,
+                true
+            ),
+            "剩余80%  18:30重置"
+        );
+        assert_eq!(
+            format_simplified_chinese_values(
+                20.0,
+                Some(session_reset),
+                UsageWindowKind::Session,
+                false
+            ),
+            "已用20%  18:30重置"
+        );
+        assert_eq!(
+            format_simplified_chinese_values(
+                80.0,
+                Some(weekly_reset),
+                UsageWindowKind::Weekly,
+                true
+            ),
+            "剩余80%  07/17重置"
+        );
+        assert_eq!(
+            format_simplified_chinese_values(
+                20.0,
+                Some(weekly_reset),
+                UsageWindowKind::Weekly,
+                false
+            ),
+            "已用20%  07/17重置"
         );
     }
 

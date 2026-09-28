@@ -14,14 +14,14 @@ use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
 const GITHUB_API_ACCEPT: &str = "application/vnd.github+json";
 const GITHUB_API_VERSION: &str = "2022-11-28";
-const RELEASE_ASSET_NAME: &str = "codex-usage.exe";
-const CHECKSUM_ASSET_NAME: &str = "codex-usage.exe.sha256";
+const RELEASE_ASSET_NAME: &str = "cybersouls-taskbar-quota-hud.exe";
+const CHECKSUM_ASSET_NAME: &str = "cybersouls-taskbar-quota-hud.exe.sha256";
 const HELPER_EXE_NAME: &str = "updater-helper.exe";
 const DOWNLOAD_EXE_NAME: &str = "update-download.exe";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const CREATE_NEW_CONSOLE: u32 = 0x00000010;
-// Keep this aligned with the package identifier used in winget-pkgs.
-const WINGET_PACKAGE_ID: &str = "Ray.CodexUsage";
+// Reserved fork identifier. Never delegate fork updates to Ray.CodexUsage.
+const WINGET_PACKAGE_ID: &str = "Cybersouls.TaskbarQuotaHUD";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstallChannel {
@@ -193,11 +193,11 @@ fn fetch_latest_release() -> Result<Option<ReleaseDescriptor>, String> {
         .set("User-Agent", user_agent())
         .set("X-GitHub-Api-Version", GITHUB_API_VERSION)
         .call()
-        .map_err(|e| format!("Unable to check GitHub releases: {e}"))?;
+        .map_err(|error| update_http_error("Unable to check GitHub releases", error))?;
 
     let release: GitHubRelease = response
         .into_json()
-        .map_err(|e| format!("Unable to parse GitHub release data: {e}"))?;
+        .map_err(|_| "Unable to parse GitHub release data.".to_string())?;
 
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
     if !is_version_newer(&latest_version, env!("CARGO_PKG_VERSION")) {
@@ -214,6 +214,8 @@ fn fetch_latest_release() -> Result<Option<ReleaseDescriptor>, String> {
         .iter()
         .find(|asset| asset.name.eq_ignore_ascii_case(CHECKSUM_ASSET_NAME))
         .ok_or_else(|| format!("Release asset {CHECKSUM_ASSET_NAME} was not found."))?;
+    validate_release_asset_url(&asset.browser_download_url, RELEASE_ASSET_NAME)?;
+    validate_release_asset_url(&checksum_asset.browser_download_url, CHECKSUM_ASSET_NAME)?;
     let expected_sha256 = fetch_release_checksum(&agent, &checksum_asset.browser_download_url)?;
 
     Ok(Some(ReleaseDescriptor {
@@ -228,7 +230,7 @@ fn fetch_release_checksum(agent: &ureq::Agent, url: &str) -> Result<String, Stri
         .get(url)
         .set("User-Agent", user_agent())
         .call()
-        .map_err(|e| format!("Unable to download the release checksum: {e}"))?;
+        .map_err(|error| update_http_error("Unable to download the release checksum", error))?;
     let content = response
         .into_string()
         .map_err(|e| format!("Unable to read the release checksum: {e}"))?;
@@ -236,13 +238,36 @@ fn fetch_release_checksum(agent: &ureq::Agent, url: &str) -> Result<String, Stri
 }
 
 fn parse_release_checksum(content: &str) -> Result<String, String> {
-    content
-        .split_whitespace()
-        .find(|value| value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()))
-        .map(|value| value.to_ascii_uppercase())
-        .ok_or_else(|| {
-            "The release checksum file does not contain a valid SHA256 value.".to_string()
-        })
+    let fields: Vec<_> = content.split_whitespace().collect();
+    if fields.len() == 2
+        && fields[0].len() == 64
+        && fields[0].chars().all(|ch| ch.is_ascii_hexdigit())
+        && fields[1] == RELEASE_ASSET_NAME
+    {
+        Ok(fields[0].to_ascii_uppercase())
+    } else {
+        Err("The checksum must contain one SHA256 and the expected release filename.".to_string())
+    }
+}
+
+fn validate_release_asset_url(url: &str, expected_name: &str) -> Result<(), String> {
+    let (owner, repo) = github_repo()?;
+    let prefix = format!("https://github.com/{owner}/{repo}/releases/download/");
+    let valid = url.strip_prefix(&prefix).is_some_and(|suffix| {
+        let parts: Vec<_> = suffix.split('/').collect();
+        parts.len() == 2
+            && !parts[0].is_empty()
+            && !matches!(parts[0], "." | "..")
+            && parts[0]
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+            && parts[1] == expected_name
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err("Release asset URL must use this fork's HTTPS GitHub download path.".to_string())
+    }
 }
 
 fn build_agent() -> Result<ureq::Agent, String> {
@@ -250,8 +275,17 @@ fn build_agent() -> Result<ureq::Agent, String> {
         .map_err(|e| format!("Unable to initialize TLS support for update checks: {e}"))?;
     Ok(ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(30))
+        .https_only(true)
         .tls_connector(std::sync::Arc::new(tls))
         .build())
+}
+
+fn update_http_error(context: &str, error: ureq::Error) -> String {
+    // Do not format raw responses, request URLs or proxy error details.
+    match error {
+        ureq::Error::Status(status, _) => format!("{context}: HTTP {status}"),
+        ureq::Error::Transport(error) => format!("{context}: {}", error.kind()),
+    }
 }
 
 fn download_release_asset(
@@ -265,7 +299,7 @@ fn download_release_asset(
         .get(url)
         .set("User-Agent", user_agent())
         .call()
-        .map_err(|e| format!("Unable to download the latest release: {e}"))?;
+        .map_err(|error| update_http_error("Unable to download the latest release", error))?;
 
     let mut reader = response.into_reader();
     let mut file = File::create(partial_path)
@@ -424,8 +458,14 @@ fn wait_for_process_exit(pid: u32, timeout: Duration) -> Result<(), String> {
 
 fn updates_dir() -> Result<PathBuf, String> {
     dirs::data_local_dir()
-        .map(|dir| dir.join("CodexUsage").join("updates"))
-        .or_else(|| Some(std::env::temp_dir().join("CodexUsage").join("updates")))
+        .map(|dir| dir.join("CybersoulsTaskbarQuotaHUD").join("updates"))
+        .or_else(|| {
+            Some(
+                std::env::temp_dir()
+                    .join("CybersoulsTaskbarQuotaHUD")
+                    .join("updates"),
+            )
+        })
         .ok_or_else(|| "Unable to resolve a writable local updates directory.".to_string())
 }
 
@@ -445,7 +485,7 @@ fn winget_upgrade_command(pid: u32, target: &str, working_dir: &str) -> String {
             "$exitCode = $LASTEXITCODE; ",
             "if ($exitCode -eq 0) {{ ",
             "Start-Sleep -Seconds 2; ",
-            "Start-Process -FilePath $target -WorkingDirectory $workingDir; ",
+            "Start-Process -FilePath $target -WorkingDirectory $workingDir -WindowStyle Hidden; ",
             "exit 0 ",
             "}}; ",
             "Write-Host ''; ",
@@ -477,7 +517,7 @@ fn ensure_target_location_writable(target: &Path) -> Result<(), String> {
         "Unable to determine the install directory for the current executable.".to_string()
     })?;
 
-    let probe_path = parent.join(".__codex_usage_update_probe");
+    let probe_path = parent.join(".__cybersouls_taskbar_quota_hud_update_probe");
     match File::create(&probe_path) {
         Ok(_) => {
             let _ = std::fs::remove_file(&probe_path);
@@ -513,8 +553,18 @@ fn is_winget_install_path(path: &Path) -> bool {
     let normalized_path = normalize_path(path);
     winget_install_roots()
         .into_iter()
-        .map(|root| normalize_path(&root))
-        .any(|root| normalized_path.starts_with(&root))
+        .any(|root| is_fork_winget_package_path(&normalized_path, &root))
+}
+
+fn is_fork_winget_package_path(normalized_path: &str, root: &Path) -> bool {
+    let prefix = format!(
+        "{}\\{}_",
+        normalize_path(root),
+        WINGET_PACKAGE_ID.to_ascii_lowercase()
+    );
+    normalized_path
+        .strip_prefix(&prefix)
+        .is_some_and(|suffix| suffix.contains('\\'))
 }
 
 fn winget_install_roots() -> Vec<PathBuf> {
@@ -611,20 +661,91 @@ mod tests {
     }
 
     #[test]
+    fn fork_update_metadata_and_numeric_versions_are_consistent() {
+        assert_eq!(
+            github_repo().unwrap(),
+            ("Shaninjah", "cybersouls-taskbar-quota-hud")
+        );
+        assert_eq!(RELEASE_ASSET_NAME, "cybersouls-taskbar-quota-hud.exe");
+        assert_eq!(
+            CHECKSUM_ASSET_NAME,
+            "cybersouls-taskbar-quota-hud.exe.sha256"
+        );
+        assert!(is_version_newer("1.9.2", "1.9.1"));
+        assert!(!is_version_newer("1.9.2", "1.9.2"));
+        assert!(is_version_newer("1.10.0", "1.9.2"));
+    }
+
+    #[test]
+    fn winget_detection_never_routes_fork_updates_to_upstream_package() {
+        let root = Path::new(r"C:\Packages");
+        assert!(is_fork_winget_package_path(
+            &normalize_path(Path::new(
+                r"C:\Packages\Cybersouls.TaskbarQuotaHUD_Microsoft.Winget.Source\cybersouls-taskbar-quota-hud.exe"
+            )),
+            root
+        ));
+        assert!(!is_fork_winget_package_path(
+            &normalize_path(Path::new(
+                r"C:\Packages\Ray.CodexUsage_Microsoft.Winget.Source\cybersouls-taskbar-quota-hud.exe"
+            )),
+            root
+        ));
+        assert!(!is_fork_winget_package_path(
+            &normalize_path(Path::new(
+                r"C:\Packages-other\Cybersouls.TaskbarQuotaHUD_Microsoft.Winget.Source\cybersouls-taskbar-quota-hud.exe"
+            )),
+            root
+        ));
+    }
+
+    #[test]
     fn parses_release_checksum_with_filename() {
         let hash = "75761c6dff9c833d0a6b7a09992ce53bd417cf4a5234c065e06b1968171e2222";
         assert_eq!(
-            parse_release_checksum(&format!("{hash}  codex-usage.exe\n")).unwrap(),
+            parse_release_checksum(&format!("{hash}  cybersouls-taskbar-quota-hud.exe\n")).unwrap(),
             hash.to_ascii_uppercase()
         );
         assert!(parse_release_checksum("not-a-checksum").is_err());
+        for content in [
+            hash.to_string(),
+            format!("{hash}  other.exe"),
+            format!("prefix {hash}  {RELEASE_ASSET_NAME}"),
+            format!("{hash}  {RELEASE_ASSET_NAME}\n{hash}  {RELEASE_ASSET_NAME}"),
+        ] {
+            assert!(parse_release_checksum(&content).is_err());
+        }
+    }
+
+    #[test]
+    fn release_urls_reject_upstream_downgrades_and_path_confusion() {
+        let valid = format!(
+            "https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/download/v1.9.2/{RELEASE_ASSET_NAME}"
+        );
+        assert!(validate_release_asset_url(&valid, RELEASE_ASSET_NAME).is_ok());
+        for invalid in [
+            valid.replace("https:", "http:"),
+            valid.replace("github.com/", "github.com.evil.invalid/"),
+            valid.replace(
+                "Shaninjah/cybersouls-taskbar-quota-hud",
+                "upstream-ray/codex-usage-monitor",
+            ),
+            valid.replace("v1.9.2", ".."),
+            valid.replace("v1.9.2", "%2e%2e"),
+            valid.replace("v1.9.2", "v1.9.2/extra"),
+            format!("{valid}?query=1"),
+            format!("{valid}#fragment"),
+            valid.replace(RELEASE_ASSET_NAME, "other.exe"),
+        ] {
+            assert!(validate_release_asset_url(&invalid, RELEASE_ASSET_NAME).is_err());
+        }
     }
 
     #[test]
     fn replacement_keeps_backup_until_relaunch_is_committed() {
         let directory = test_directory("rollback");
         std::fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("codex-usage.exe");
+        let target = directory.join("cybersouls-taskbar-quota-hud.exe");
         let source = directory.join("download.exe");
         std::fs::write(&target, b"old-version").unwrap();
         std::fs::write(&source, b"new-version").unwrap();
@@ -646,7 +767,7 @@ mod tests {
     fn failed_relaunch_restores_previous_target() {
         let directory = test_directory("failed-relaunch");
         std::fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("codex-usage.exe");
+        let target = directory.join("cybersouls-taskbar-quota-hud.exe");
         let source = directory.join("download.exe");
         std::fs::write(&target, b"known-good-version").unwrap();
         std::fs::write(&source, b"not-a-windows-executable").unwrap();

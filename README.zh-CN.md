@@ -3,9 +3,27 @@
 
 [English](README.md) | **简体中文**
 
-# Codex Usage
+# Cybersouls Taskbar Quota HUD
 
-<img src=".github/codex-usage-icon.png" alt="Codex Usage 图标" width="96" height="96">
+AI quota monitoring directly in your Windows taskbar.
+
+此社区分支源自 [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor)，不隶属于 OpenAI、Anthropic 或 Google。首版为 1.9.2；更新仅来自本分支。Codex 5h 和 7d 独立根据剩余额度与距离重置的精确时间着色，不再仅按剩余百分比着色。浅色主题使用更深的同色系以提高文字对比度。保留原图标以及本地 `%APPDATA%\CodexUsage` 设置。详见 [English README](README.md)。
+
+## 动态额度颜色
+
+周额度的缓冲小时数为 `剩余百分比 / 100 × 168 − 距离重置的秒数 / 3600`。现在使用 16 个渐进色阶：绿色、黄色、橙色和红色各 4 个，相邻色阶变化更小。非负缓冲为绿色，分界为 +36、+24、+12 和 0 小时；负缓冲到 −24 小时为黄色，每 6 小时一档；−24 到 −48 小时为橙色，每 6 小时一档；低于 −48 小时为红色，分界为 −60、−72 和 −84 小时。恰好跟上理论进度（0 小时）仍显示绿色；恰好在分界上使用较轻的色阶。完整的阈值与浅色/深色主题颜色见 [English README](README.md#dynamic-quota-colors)。计算保留小数小时与秒，不按整小时或整天取整；颜色只在跨过分段阈值时切换。
+
+5 小时周期按比例缩放相同阈值。每行使用自己的重置时间，剩余/已用显示模式不改变颜色。每分钟至少重绘一次颜色，不增加额度请求；重置时间未知或已过期以及错误状态使用中性颜色。此计算比较的是理论线性预算，不是基于历史消费速度的预测。Claude Code 和 Antigravity 保持原有颜色，低额度提醒的百分比阈值不变。
+
+<img src=".github/codex-usage-icon.png" alt="Cybersouls Taskbar Quota HUD 图标" width="96" height="96">
+
+## 额度显示
+
+右键点击任务栏组件或托盘图标，在 **额度显示** 中选择 **剩余额度**（默认）或 **已用额度**。这个设置同时应用于 Codex 的 5h 和 7d 两行，在所有语言中都生效；语言不再决定 Codex 显示剩余还是已用额度。
+
+已用 20% 时，剩余模式显示 80%，进度条填充 80%；已用模式显示 20%，进度条填充 20%。两个模式的颜色均根据剩余额度与重置时间计算，因此相同。简体中文保留原有的紧凑重置时间布局，并分别显示“剩余”或“已用”。切换模式只更新已有数据的显示，不会重新请求额度。
+
+选择保存在现有 `%APPDATA%\CodexUsage\settings.json` 的 `quota_display_mode` 字段中，值为 `remaining` 或 `used`。旧设置中缺少该字段或值无效时，默认使用 `remaining`，其他偏好保持不变。这个选项仅影响 Codex；Claude Code 和 Antigravity 的显示行为保持不变。
 
 ![运行效果](.github/animation.gif)
 
@@ -50,28 +68,28 @@ Antigravity 也是可选功能。若要显示其用量，请安装并登录 Goog
 
 ## 安装
 
-如需按用户安装，请从[最新版本](https://github.com/upstream-ray/codex-usage-monitor/releases/latest)下载 `install.ps1`，然后运行：
+如需按用户安装，请从[最新版本](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/latest)下载 `install.ps1`，然后运行：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-安装程序会校验发布文件的 SHA256，并在无需管理员权限的情况下安装到 `%LOCALAPPDATA%\Programs\CodexUsage`。它还会创建开始菜单快捷方式，并在 Windows“已安装的应用”中添加卸载项。
+安装程序会校验发布文件的 SHA256，并在无需管理员权限的情况下安装到 `%LOCALAPPDATA%\Programs\CybersoulsTaskbarQuotaHUD`。它还会创建开始菜单快捷方式，并在 Windows“已安装的应用”中添加卸载项。
 
-如需便携使用，可从同一版本页面下载 `codex-usage.exe`，放在任意具有写入权限的目录中运行。你也可以在本地构建：
+如需便携使用，可从同一版本页面下载 `cybersouls-taskbar-quota-hud.exe`，放在任意具有写入权限的目录中运行。你也可以在本地构建：
 
 ```powershell
 cargo build --release
 ```
 
-本地构建的可执行文件位于 `target\release\codex-usage.exe`。
+本地构建的可执行文件位于 `target\release\cybersouls-taskbar-quota-hud.exe`。
 
 ## 卸载
 
-可在 Windows“设置”>“应用”>“已安装的应用”中卸载 **Codex Usage**，或运行：
+可在 Windows“设置”>“应用”>“已安装的应用”中卸载 **Cybersouls Taskbar Quota HUD**，或运行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\CodexUsage\uninstall.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\CybersoulsTaskbarQuotaHUD\uninstall.ps1"
 ```
 
 卸载时会保留 `%APPDATA%\CodexUsage\settings.json`。如需同时删除设置，请显式添加 `-RemoveSettings`。有关升级、便携版、开机启动和 WinGet 的说明，请参阅[安装机制](docs/installation.md)。
@@ -81,7 +99,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Progr
 运行：
 
 ```powershell
-codex-usage
+cybersouls-taskbar-quota-hud
 ```
 
 启动后，它会出现在任务栏和通知区域的系统托盘中。
@@ -123,13 +141,13 @@ Claude 桌面客户端与 Claude Code CLI 使用相互独立的本地登录状�
 如需排查启动或显示问题，请运行：
 
 ```powershell
-codex-usage --diagnose
+cybersouls-taskbar-quota-hud --diagnose
 ```
 
 日志将写入：
 
 ```text
-%TEMP%\codex-usage.log
+%TEMP%\cybersouls-taskbar-quota-hud.log
 ```
 
 日志会记录应用版本、安装渠道、可执行文件路径、轮询失败类别和重试时间，但不会记录访问令牌或凭据内容。有关任务栏错误标签及恢复步骤，请参阅[故障排除](docs/troubleshooting.md)。
@@ -168,7 +186,7 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 - 请求 Anthropic 的 Claude 端点，以读取用量和速率限制信息
 - 启用 Codex 时，请求 ChatGPT 的 Codex 用量端点，以读取 Codex 用量和速率限制信息
 - 启用 Antigravity 时，请求 Google Cloud Code / Antigravity 端点，以读取 Antigravity 配额信息
-- 仅在使用软件更新检查或自更新功能时请求 GitHub
+- 手动与定时更新检查、自更新下载会请求 GitHub，不附带 provider OAuth 令牌
 - 如果设置了 `HTTPS_PROXY`、`HTTP_PROXY` 或 `ALL_PROXY` 等代理环境变量，上述出站请求可能通过代理发送
 
 应用在本地保存的内容：
@@ -181,14 +199,14 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 - 上次更新检查时间
 - 可见的配额行和低配额提醒阈值
 - 用于避免重复提醒的配额窗口通知键
-- 显示模型偏好
+- 启用的 provider 和 Codex 剩余/已用显示模式
+- 可选诊断日志和临时更新文件
 
 应用**不会**执行的操作：
 
-- 不会将凭据发送到其他服务器
-- 不使用独立的后端服务
-- 不收集分析数据或遥测信息
-- 不上传项目文件
+- 已审查的应用代码不包含 Cybersouls 遥测或后端端点
+- 监控器自身的配额请求不包含项目文件
+- OAuth 凭据不会序列化到监控器设置或写入其诊断日志
 - 不直接修改 Codex 凭据文件
 - 不读取或复用 Claude 桌面客户端的认证数据
 
@@ -198,7 +216,9 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 - 如果 Codex 令牌过期，应用可能会在后台调用本地 Codex CLI 进行刷新。监控器本身不会写入 `auth.json`，任何凭据更新都由 Codex CLI 完成
 - 如果 Antigravity 令牌过期，请打开 Antigravity 并重新登录。监控器不会写入 Windows 凭据管理器
 - 便携版可以从本仓库下载最新版本进行自更新
-- 代理必须可信，因为代理转发的用量请求会在 TLS 连接内包含 OAuth Bearer 令牌
+- 本地 CLI 刷新使用最小 `.` 提示，并遵循 CLI 自身的设置；这些调用及 Claude Messages 回退可能消耗少量额度。Codex 普通用量 GET 和本地颜色重绘不会发送生成提示。
+- HTTP agents 强制 HTTPS 并使用系统证书验证。隧道代理通常只转发加密数据；使用系统信任证书终止 TLS 的代理可以查看认证流量，因此只使用可信代理。
+- 诊断日志可能含本地路径、发行版名称、时间与配额数值；提交 issue 前请检查并脱敏，勿附带凭据文件。完整的域名、存储及传输说明见 [English README](README.md#privacy-and-security)。
 
 ## 工作原理
 
@@ -216,6 +236,6 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 
 本项目采用 MIT License。原始 [LICENSE](LICENSE) 及版权声明均予以保留。
 
-Codex Usage 是 [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor) 的持续维护衍生版本。感谢 Craig Constable 和上游贡献者创建原始项目。本仓库中的修改与上游维护者或 OpenAI 不存在隶属或背书关系。
+Cybersouls Taskbar Quota HUD 是 [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor) 的分支，后者源自 [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor)。感谢 Craig Constable 和上游贡献者创建原始项目。本仓库中的修改与上游维护者、OpenAI、Anthropic 或 Google 不存在隶属或背书关系。
 
 如果你想检查程序行为或审核代码，仓库中提供了全部源码。

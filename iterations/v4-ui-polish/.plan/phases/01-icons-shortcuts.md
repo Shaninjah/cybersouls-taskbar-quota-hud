@@ -21,5 +21,5 @@
 
 ## Notes
 
-- 用户截图：`C:/Users/Ray/AppData/Local/PixPin/Temp/PixPin_2026-07-11_14-11-56.png`、`PixPin_2026-07-11_14-12-06.png`。
-- 新桌面快捷方式为 `D:/xuniCpan/Codex Usage.lnk`；Windows 左下角箭头为系统快捷方式覆盖层，底层图标与稳定安装 EXE 完全一致。
+- 用户截图：本地验证（个人路径未保留）。
+- 新桌面快捷方式为 `%USERPROFILE%\Desktop\Codex Usage.lnk`；Windows 左下角箭头为系统快捷方式覆盖层，底层图标与稳定安装 EXE 完全一致。

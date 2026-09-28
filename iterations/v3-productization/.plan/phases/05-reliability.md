@@ -22,5 +22,5 @@
 
 ## Notes
 
-- 资源监测结果保存在 `target/resource-monitor/summary.json` 与 `samples.csv`。进程 PID 34696 在两次 5 分钟自动刷新周期内保持运行；Private 最大 3.227 MB，Working Set 最大 22.086 MB，Handles 最大 327，GDI 恒为 19，USER 最大 14。
+- 资源监测结果保存在 `target/resource-monitor/summary.json` 与 `samples.csv`。进程 local process verified 在两次 5 分钟自动刷新周期内保持运行；Private 最大 3.227 MB，Working Set 最大 22.086 MB，Handles 最大 327，GDI 恒为 19，USER 最大 14。
 - 最终验证：`cargo fmt -- --check`、`cargo test`（17 passed）、`cargo clippy --all-targets`（退出成功，9 条既有风格警告）、`cargo build --release`、`git diff --check` 均通过。

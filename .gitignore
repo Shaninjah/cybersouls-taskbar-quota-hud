@@ -26,3 +26,17 @@ AGENTS.md
 
 # Local WinGet manifest generation output
 /manifests/
+
+# Local credentials and development secrets
+auth.json
+.credentials.json
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+.codex/
+.claude/
+.antigravity/
+/dist/

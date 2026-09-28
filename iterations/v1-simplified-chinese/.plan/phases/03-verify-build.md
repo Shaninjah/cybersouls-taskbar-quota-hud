@@ -15,7 +15,7 @@
 
 - [x] 运行格式检查与完整测试 (`cargo fmt -- --check`; `cargo test`: 9 passed; `cargo clippy --all-targets` 通过并保留 9 条原有风格警告)
 - [x] 编译 release EXE (`cargo build --release`; `target/release/claude-code-usage-monitor.exe`, 852992 bytes)
-- [x] 启动验证并测量资源占用 (PID 55824; Responding=True; PrivateMB=3.4; `target/widget-printwindow-large.png`)
+- [x] 启动验证并测量资源占用 (local process verified; Responding=True; PrivateMB=3.4; `target/widget-printwindow-large.png`)
 - [x] 审查最终差异和产物信息 (`git diff --check`; SHA256 `03DAF2D41B74C009871D9604242D95225168EA8468E7F5D9E7F5FA37A3102513`)
 
 ## Notes

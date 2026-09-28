@@ -3,9 +3,12 @@ use super::Strings;
 pub(super) const UPDATE_VIA_WINGET_LABEL: &str = "WinGet で更新";
 
 pub(super) const STRINGS: Strings = Strings {
-    window_title: "Codex Usage",
+    window_title: "Cybersouls Taskbar Quota HUD",
     refresh: "更新",
     update_frequency: "更新間隔",
+    quota_display: "クォータ表示",
+    remaining_quota: "残りのクォータ",
+    used_quota: "使用済みクォータ",
     one_minute: "1分",
     five_minutes: "5分",
     fifteen_minutes: "15分",
@@ -44,7 +47,7 @@ pub(super) const STRINGS: Strings = Strings {
     codex_token_expired_body: "ターミナルで 'codex' を実行し、サインインの案内に従ってください。その後、このアプリを更新または再起動してください。",
     antigravity_token_expired_title: "Antigravity 認証エラー",
     antigravity_token_expired_body: "Antigravity を開いて再度サインインしてください。その後、このアプリを更新するか再起動してください。",
-    codex_window_title: "Codex 使用量モニター",
+    codex_window_title: "Cybersouls Taskbar Quota HUD",
     antigravity_window_title: "Antigravity 使用量モニター",
     second_suffix: "秒",
 };

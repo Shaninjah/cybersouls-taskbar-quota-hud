@@ -1,14 +1,14 @@
-# Troubleshooting Codex Usage
+# Troubleshooting Cybersouls Taskbar Quota HUD
 
 ## Taskbar error labels
 
-Codex Usage keeps authentication failures separate from transient service failures:
+Cybersouls Taskbar Quota HUD keeps authentication failures separate from transient service failures:
 
 | Simplified Chinese | Other languages | Meaning | Recommended action |
 |---|---|---|---|
-| `!` | `!` | Enabled service credentials are missing or expired | Sign in with the relevant CLI/app, then refresh Codex Usage. Claude Desktop login does not count as Claude Code CLI login. |
+| `!` | `!` | Enabled service credentials are missing or expired | Sign in with the relevant CLI/app, then refresh Cybersouls Taskbar Quota HUD. Claude Desktop login does not count as Claude Code CLI login. |
 | `网络` | `NET` | Network or TLS connection failed | Check connectivity, VPN, proxy, and firewall settings |
-| `限流` | `429` | Provider rate limit | Wait for the provider retry window; Codex Usage retries with backoff |
+| `限流` | `429` | Provider rate limit | Wait for the provider retry window; Cybersouls Taskbar Quota HUD retries with backoff |
 | `服务` | `5XX` | Provider service failure | Wait and retry; check provider status if it persists |
 | `错误` | `ERR` | Invalid or unsupported response | Enable diagnostics and inspect the log |
 
@@ -19,10 +19,10 @@ Authentication failures pause provider polling until the credential source chang
 Run:
 
 ```powershell
-codex-usage.exe --diagnose
+cybersouls-taskbar-quota-hud.exe --diagnose
 ```
 
-The log is written to `%TEMP%\codex-usage.log`. It includes:
+The log is written to `%TEMP%\cybersouls-taskbar-quota-hud.log`. It includes:
 
 - application version and executable path
 - direct or WinGet install channel
@@ -33,13 +33,11 @@ The log does not include access tokens, refresh tokens, credential file contents
 
 ## Update failures
 
-Direct installations and portable copies download only the exact `codex-usage.exe` asset and verify it against `codex-usage.exe.sha256` from the same GitHub Release. The updater keeps the previous EXE until the downloaded version has been installed and restarted successfully. If restart fails, the old EXE is restored.
+Direct installations and portable copies download only the exact `cybersouls-taskbar-quota-hud.exe` asset and verify it against `cybersouls-taskbar-quota-hud.exe.sha256` from the same GitHub Release. The updater keeps the previous EXE until the downloaded version has been installed and restarted successfully. If restart fails, the old EXE is restored.
 
-WinGet-managed installations delegate upgrades to WinGet:
+Updates come from the fork repository configured in `Cargo.toml`. Before the first fork release is published, GitHub may return 404 for the latest-release query. There is no fallback to upstream.
 
-```powershell
-winget upgrade --id Ray.CodexUsage --exact
-```
+No fork WinGet package has been published. A future `Cybersouls.TaskbarQuotaHUD` package will delegate its own upgrades to WinGet; `Ray.CodexUsage` is never an update source for this fork.
 
 ## Reset local position without deleting settings
 

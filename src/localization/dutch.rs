@@ -3,9 +3,12 @@ use super::Strings;
 pub(super) const UPDATE_VIA_WINGET_LABEL: &str = "Bijwerken via WinGet";
 
 pub(super) const STRINGS: Strings = Strings {
-    window_title: "Codex Usage",
+    window_title: "Cybersouls Taskbar Quota HUD",
     refresh: "Vernieuwen",
     update_frequency: "Updatefrequentie",
+    quota_display: "Quotumweergave",
+    remaining_quota: "Resterend quotum",
+    used_quota: "Gebruikt quotum",
     one_minute: "1 minuut",
     five_minutes: "5 minuten",
     fifteen_minutes: "15 minuten",
@@ -44,7 +47,7 @@ pub(super) const STRINGS: Strings = Strings {
     codex_token_expired_body: "Voer 'codex' uit in een terminal en volg de aanmeldstappen. Ververs of herstart de app daarna.",
     antigravity_token_expired_title: "Antigravity-authenticatiefout",
     antigravity_token_expired_body: "Open Antigravity en meld je opnieuw aan. Ververs of herstart de app daarna.",
-    codex_window_title: "Codex-gebruiksmonitor",
+    codex_window_title: "Cybersouls Taskbar Quota HUD",
     antigravity_window_title: "Antigravity-gebruiksmonitor",
     second_suffix: "s",
 };

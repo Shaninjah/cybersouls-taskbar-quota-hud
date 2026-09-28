@@ -11,7 +11,7 @@ struct DiagnoseState {
 static DIAGNOSE_STATE: OnceLock<DiagnoseState> = OnceLock::new();
 
 pub fn init() -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join("codex-usage.log");
+    let path = std::env::temp_dir().join("cybersouls-taskbar-quota-hud.log");
     let file = OpenOptions::new()
         .create(true)
         .write(true)

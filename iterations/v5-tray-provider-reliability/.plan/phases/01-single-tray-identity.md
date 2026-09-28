@@ -17,11 +17,11 @@
 - [x] 将托盘注册和更新逻辑收敛为单个应用图标（`src/tray_icon.rs:12,40,147-166`）
 - [x] 汇总已启用服务的托盘提示并补充单元测试（`src/window.rs:487-503,656-714,3933-3950`; `cargo test`: 21 passed）
 - [x] 更新简体中文菜单及中英文 README（`src/localization/simplified_chinese.rs:13`; `src/localization/english.rs:13`; `README.md`; `README.zh-CN.md`）
-- [x] 构建发布版并安装到本机供用户截图验收（`cargo build --release`; installed PID 41876; SHA256 `F714F828E84E4A369ED0EB498828732E2EA0B7698282E6A0D41C5994DBC7F342`; 用户于 2026-07-11 确认第一阶段通过）
+- [x] 构建发布版并安装到本机供用户截图验收（`cargo build --release`; local process verified; SHA256 `F714F828E84E4A369ED0EB498828732E2EA0B7698282E6A0D41C5994DBC7F342`; 用户于 2026-07-11 确认第一阶段通过）
 
 ## Notes
 
-- 用户截图：`C:/Users/Ray/AppData/Local/PixPin/Temp/PixPin_2026-07-11_14-48-58.png`、`PixPin_2026-07-11_14-49-46.png`
+- 用户截图：本地验证（个人路径未保留）。
 - Phase 01 不修改 Claude Code 认证和配额轮询逻辑。
 - 自测：`cargo fmt --check`、`cargo test`、`cargo clippy --all-targets`、`cargo build --release`、`git diff --check` 均成功；Clippy 保持 9 条既有风格警告，无新增警告。
 - 用户验收：2026-07-11 确认第一阶段通过。

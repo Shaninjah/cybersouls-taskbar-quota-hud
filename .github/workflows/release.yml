@@ -6,41 +6,78 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  RELEASE_ASSET_NAME: codex-usage.exe
+  RELEASE_ASSET_NAME: cybersouls-taskbar-quota-hud.exe
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (2026-09-28)
+        with:
+          components: rustfmt, clippy
+
+      - name: Validate release version and code
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match Cargo.toml version' }
+          cargo fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/test-install-safety.ps1
 
       - name: Build release binary
-        run: cargo build --release
+        run: ./scripts/build-release.ps1
 
       - name: Prepare release assets
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target/release/codex-usage.exe dist/codex-usage.exe
+          Copy-Item target/release/cybersouls-taskbar-quota-hud.exe dist/cybersouls-taskbar-quota-hud.exe
           Copy-Item scripts/install.ps1 dist/install.ps1
           Copy-Item scripts/uninstall.ps1 dist/uninstall.ps1
 
-          $hash = (Get-FileHash -Algorithm SHA256 dist/codex-usage.exe).Hash.ToLowerInvariant()
-          "$hash  codex-usage.exe" | Set-Content -Encoding ascii dist/codex-usage.exe.sha256
+          $hash = (Get-FileHash -Algorithm SHA256 dist/cybersouls-taskbar-quota-hud.exe).Hash.ToLowerInvariant()
+          "$hash  cybersouls-taskbar-quota-hud.exe" | Set-Content -Encoding ascii dist/cybersouls-taskbar-quota-hud.exe.sha256
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: |
+            dist/cybersouls-taskbar-quota-hud.exe
+            dist/cybersouls-taskbar-quota-hud.exe.sha256
+            dist/install.ps1
+            dist/uninstall.ps1
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: dist
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
-            dist/codex-usage.exe
-            dist/codex-usage.exe.sha256
+            dist/cybersouls-taskbar-quota-hud.exe
+            dist/cybersouls-taskbar-quota-hud.exe.sha256
             dist/install.ps1
             dist/uninstall.ps1
           generate_release_notes: true
+          fail_on_unmatched_files: true
