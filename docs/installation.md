@@ -33,7 +33,7 @@ Install/uninstall helpers reject symbolic links or junctions in application path
 - Normal uninstall preserves settings so a later reinstall restores preferences.
 - `uninstall.ps1 -RemoveSettings` explicitly deletes the settings directory.
 - The installer does not enable startup automatically. If startup was already enabled, installation preserves that choice and updates the registry value to the stable installed executable. Users otherwise control startup from the application's settings menu.
-- Uninstall removes the `CodexUsage` startup entry because its executable no longer exists.
+- Uninstall removes the `CodexUsage` startup entry only when it targets this installation.
 
 ## Migration from upstream
 
