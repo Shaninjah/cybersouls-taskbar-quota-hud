@@ -12,24 +12,30 @@ jobs:
   check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (2026-09-28)
         with:
           components: rustfmt, clippy
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --locked
-      - run: cargo build --release --locked
+      - run: ./scripts/build-release.ps1
       - name: Verify PowerShell syntax
         shell: pwsh
         run: |
-          foreach ($file in @('scripts/install.ps1', 'scripts/uninstall.ps1')) {
+          foreach ($file in @('scripts/install.ps1', 'scripts/uninstall.ps1', 'scripts/build-release.ps1', 'scripts/test-install-safety.ps1')) {
             $errors = $null
             $tokens = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors)
             if ($errors.Count) { throw ($errors | Out-String) }
           }
-      - uses: actions/upload-artifact@v4
+      - name: Test installer safety guards
+        shell: pwsh
+        run: ./scripts/test-install-safety.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cybersouls-taskbar-quota-hud-windows
           path: target/release/cybersouls-taskbar-quota-hud.exe
+          if-no-files-found: error
