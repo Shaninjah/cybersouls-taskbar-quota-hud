@@ -3,9 +3,13 @@
 
 [English](README.md) | **简体中文**
 
-# Codex Usage
+# Cybersouls Taskbar Quota HUD
 
-<img src=".github/codex-usage-icon.png" alt="Codex Usage 图标" width="96" height="96">
+AI quota monitoring directly in your Windows taskbar.
+
+此社区分支源自 [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor)，不隶属于 OpenAI、Anthropic 或 Google。首版为 1.9.2；更新仅来自本分支。Codex 5h 和 7d 独立按剩余额度着色：青色 70–100%，蓝色 40–69%，琥珀色 20–39%，红色 0–19%。浅色主题使用更深的同色系以提高文字对比度。保留原图标以及本地 `%APPDATA%\CodexUsage` 设置。详见 [English README](README.md)。
+
+<img src=".github/codex-usage-icon.png" alt="Cybersouls Taskbar Quota HUD 图标" width="96" height="96">
 
 ![运行效果](.github/animation.gif)
 
@@ -50,28 +54,28 @@ Antigravity 也是可选功能。若要显示其用量，请安装并登录 Goog
 
 ## 安装
 
-如需按用户安装，请从[最新版本](https://github.com/upstream-ray/codex-usage-monitor/releases/latest)下载 `install.ps1`，然后运行：
+如需按用户安装，请从[最新版本](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/latest)下载 `install.ps1`，然后运行：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-安装程序会校验发布文件的 SHA256，并在无需管理员权限的情况下安装到 `%LOCALAPPDATA%\Programs\CodexUsage`。它还会创建开始菜单快捷方式，并在 Windows“已安装的应用”中添加卸载项。
+安装程序会校验发布文件的 SHA256，并在无需管理员权限的情况下安装到 `%LOCALAPPDATA%\Programs\CybersoulsTaskbarQuotaHUD`。它还会创建开始菜单快捷方式，并在 Windows“已安装的应用”中添加卸载项。
 
-如需便携使用，可从同一版本页面下载 `codex-usage.exe`，放在任意具有写入权限的目录中运行。你也可以在本地构建：
+如需便携使用，可从同一版本页面下载 `cybersouls-taskbar-quota-hud.exe`，放在任意具有写入权限的目录中运行。你也可以在本地构建：
 
 ```powershell
 cargo build --release
 ```
 
-本地构建的可执行文件位于 `target\release\codex-usage.exe`。
+本地构建的可执行文件位于 `target\release\cybersouls-taskbar-quota-hud.exe`。
 
 ## 卸载
 
-可在 Windows“设置”>“应用”>“已安装的应用”中卸载 **Codex Usage**，或运行：
+可在 Windows“设置”>“应用”>“已安装的应用”中卸载 **Cybersouls Taskbar Quota HUD**，或运行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\CodexUsage\uninstall.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\CybersoulsTaskbarQuotaHUD\uninstall.ps1"
 ```
 
 卸载时会保留 `%APPDATA%\CodexUsage\settings.json`。如需同时删除设置，请显式添加 `-RemoveSettings`。有关升级、便携版、开机启动和 WinGet 的说明，请参阅[安装机制](docs/installation.md)。
@@ -81,7 +85,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Progr
 运行：
 
 ```powershell
-codex-usage
+cybersouls-taskbar-quota-hud
 ```
 
 启动后，它会出现在任务栏和通知区域的系统托盘中。
@@ -123,13 +127,13 @@ Claude 桌面客户端与 Claude Code CLI 使用相互独立的本地登录状�
 如需排查启动或显示问题，请运行：
 
 ```powershell
-codex-usage --diagnose
+cybersouls-taskbar-quota-hud --diagnose
 ```
 
 日志将写入：
 
 ```text
-%TEMP%\codex-usage.log
+%TEMP%\cybersouls-taskbar-quota-hud.log
 ```
 
 日志会记录应用版本、安装渠道、可执行文件路径、轮询失败类别和重试时间，但不会记录访问令牌或凭据内容。有关任务栏错误标签及恢复步骤，请参阅[故障排除](docs/troubleshooting.md)。
@@ -216,6 +220,6 @@ Codex 用量来自本地 Codex 安装中已登录的账户。可选的 Claude Co
 
 本项目采用 MIT License。原始 [LICENSE](LICENSE) 及版权声明均予以保留。
 
-Codex Usage 是 [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor) 的持续维护衍生版本。感谢 Craig Constable 和上游贡献者创建原始项目。本仓库中的修改与上游维护者或 OpenAI 不存在隶属或背书关系。
+Cybersouls Taskbar Quota HUD 是 [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor) 的持续维护衍生版本。感谢 Craig Constable 和上游贡献者创建原始项目。本仓库中的修改与上游维护者或 OpenAI 不存在隶属或背书关系。
 
 如果你想检查程序行为或审核代码，仓库中提供了全部源码。

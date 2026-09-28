@@ -3,13 +3,38 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-# Codex Usage
+# Cybersouls Taskbar Quota HUD
 
-<img src=".github/codex-usage-icon.png" alt="Codex Usage icon" width="96" height="96">
+<img src=".github/codex-usage-icon.png" alt="Cybersouls Taskbar Quota HUD icon" width="96" height="96">
 
 ![Screenshot](.github/animation.gif)
 
-A lightweight native Windows taskbar widget for monitoring Codex usage, with optional Claude Code and Google Antigravity usage display.
+**AI quota monitoring directly in your Windows taskbar.**
+
+A small native Windows application forked from [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor), with optional Claude Code and Google Antigravity monitoring. This community fork is not an official product and is not affiliated with or endorsed by OpenAI, Anthropic, or Google.
+
+## Dynamic quota colors
+
+Each Codex row (5h and 7d) selects its bar fill and value-text color independently from **remaining** quota:
+
+| Color | Remaining quota | Dark theme | Light theme |
+|---|---|---|---|
+| Cyan | 70–100% | `#22D3EE` | `#0E7490` |
+| Blue | 40–69% | `#3B82F6` | `#1D4ED8` |
+| Amber | 20–39% | `#F59E0B` | `#92400E` |
+| Red | 0–19% | `#EF4444` | `#B91C1C` |
+
+Thresholds are continuous: 70%, 40%, and 20% are the lower bounds of their bands. Light-theme variants preserve the four identities while improving small-text contrast. API values are percentages **used**; colors use `100 - used`, clamped to 0–100, before localization or display conversion. Existing display behavior is preserved: Simplified Chinese shows remaining quota; other languages show used quota. Colors always describe remaining quota. Claude Code and Antigravity retain their existing colors. Loading/error values use a neutral Codex color.
+
+## Fork version and branding
+
+The first Cybersouls release is **1.9.2**, with recommended tag `v1.9.2`. The existing updater compares numeric major/minor/patch values and ignores prerelease suffixes, so releases use ordinary increasing numeric versions. Both the updater and installer use [this fork's releases](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases), never upstream releases. Until the first release exists, update checks may report that no release is available. The original application icon is retained for this first version; a distinct icon can be added later.
+
+Keep `origin` pointing to this fork and `upstream` pointing to the original repository. Future upstream changes can be fetched with `git fetch upstream` and reviewed/merged from `upstream/main`.
+
+## Credential safety
+
+Credentials remain in their local provider-managed stores. The existing application code reads the local credentials needed by enabled providers and sends authenticated usage requests to their endpoints. There is no intermediate Cybersouls backend. Never commit credentials, `auth.json`, local environment files, or private keys. The repository's ignore rules provide additional protection; they do not replace review before committing.
 
 It sits in your taskbar and shows how much of your Codex usage window remains without opening the Codex app or account usage page.
 
@@ -50,28 +75,28 @@ If you use Claude Code through WSL, that is supported too. The monitor can read 
 
 ## Install
 
-For a per-user installation, download `install.ps1` from the [latest release](https://github.com/upstream-ray/codex-usage-monitor/releases/latest), then run:
+For a per-user installation, download `install.ps1` from the [latest release](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/releases/latest), then run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The installer verifies the release SHA256 and installs to `%LOCALAPPDATA%\Programs\CodexUsage` without administrator access. It adds a Start menu shortcut and an entry in Windows Installed Apps.
+The installer verifies the release SHA256 and installs to `%LOCALAPPDATA%\Programs\CybersoulsTaskbarQuotaHUD` without administrator access. It adds a Start menu shortcut and an entry in Windows Installed Apps.
 
-For portable use, download `codex-usage.exe` from the same release and run it from any user-writable directory. You can also build it locally:
+For portable use, download `cybersouls-taskbar-quota-hud.exe` from the same release and run it from any user-writable directory. You can also build it locally:
 
 ```powershell
 cargo build --release
 ```
 
-Local builds create the executable at `target\release\codex-usage.exe`.
+Local builds create the executable at `target\release\cybersouls-taskbar-quota-hud.exe`.
 
 ## Uninstall
 
-Uninstall **Codex Usage** from Windows Settings > Apps > Installed apps, or run:
+Uninstall **Cybersouls Taskbar Quota HUD** from Windows Settings > Apps > Installed apps, or run:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\CodexUsage\uninstall.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\CybersoulsTaskbarQuotaHUD\uninstall.ps1"
 ```
 
 Uninstalling preserves `%APPDATA%\CodexUsage\settings.json`. Add `-RemoveSettings` to delete settings explicitly. See [Installation model](docs/installation.md) for upgrade, portable, startup, and WinGet behavior.
@@ -81,7 +106,7 @@ Uninstalling preserves `%APPDATA%\CodexUsage\settings.json`. Add `-RemoveSetting
 Run:
 
 ```powershell
-codex-usage
+cybersouls-taskbar-quota-hud
 ```
 
 Once running, it will appear in your taskbar and as one tray icon in the notification area.
@@ -123,13 +148,13 @@ In Simplified Chinese, the compact taskbar rows use `5h` / `7d`, one continuous 
 If you need to troubleshoot startup or visibility issues, run:
 
 ```powershell
-codex-usage --diagnose
+cybersouls-taskbar-quota-hud --diagnose
 ```
 
 This writes a log file to:
 
 ```text
-%TEMP%\codex-usage.log
+%TEMP%\cybersouls-taskbar-quota-hud.log
 ```
 
 The log records the application version, install channel, executable path, polling failure category, and retry timing. It does not log access tokens or credential contents. See [Troubleshooting](docs/troubleshooting.md) for the taskbar error labels and recovery steps.
@@ -216,6 +241,6 @@ If the newer usage endpoint is unavailable, it can fall back to reading the rate
 
 This project is licensed under the MIT License. The original [LICENSE](LICENSE) and copyright notice are preserved.
 
-Codex Usage is a maintained derivative of [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor). Thanks to Craig Constable and the upstream contributors for the original project. Changes in this repository are not affiliated with or endorsed by the upstream maintainers or OpenAI.
+This fork retains the work and attribution of [upstream-ray/codex-usage-monitor](https://github.com/upstream-ray/codex-usage-monitor), itself a maintained derivative of [CodeZeno/Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor). Thanks to Craig Constable and the upstream contributors for the original project. Changes in this repository are not affiliated with or endorsed by the upstream maintainers, OpenAI, Anthropic, or Google.
 
 If you want to inspect the behavior or audit the code, everything is in this repository.
