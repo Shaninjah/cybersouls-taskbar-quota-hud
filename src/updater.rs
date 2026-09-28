@@ -14,14 +14,14 @@ use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
 const GITHUB_API_ACCEPT: &str = "application/vnd.github+json";
 const GITHUB_API_VERSION: &str = "2022-11-28";
-const RELEASE_ASSET_NAME: &str = "codex-usage.exe";
-const CHECKSUM_ASSET_NAME: &str = "codex-usage.exe.sha256";
+const RELEASE_ASSET_NAME: &str = "cybersouls-taskbar-quota-hud.exe";
+const CHECKSUM_ASSET_NAME: &str = "cybersouls-taskbar-quota-hud.exe.sha256";
 const HELPER_EXE_NAME: &str = "updater-helper.exe";
 const DOWNLOAD_EXE_NAME: &str = "update-download.exe";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const CREATE_NEW_CONSOLE: u32 = 0x00000010;
-// Keep this aligned with the package identifier used in winget-pkgs.
-const WINGET_PACKAGE_ID: &str = "Ray.CodexUsage";
+// Reserved fork identifier. Never delegate fork updates to Ray.CodexUsage.
+const WINGET_PACKAGE_ID: &str = "Cybersouls.TaskbarQuotaHUD";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstallChannel {
@@ -424,8 +424,14 @@ fn wait_for_process_exit(pid: u32, timeout: Duration) -> Result<(), String> {
 
 fn updates_dir() -> Result<PathBuf, String> {
     dirs::data_local_dir()
-        .map(|dir| dir.join("CodexUsage").join("updates"))
-        .or_else(|| Some(std::env::temp_dir().join("CodexUsage").join("updates")))
+        .map(|dir| dir.join("CybersoulsTaskbarQuotaHUD").join("updates"))
+        .or_else(|| {
+            Some(
+                std::env::temp_dir()
+                    .join("CybersoulsTaskbarQuotaHUD")
+                    .join("updates"),
+            )
+        })
         .ok_or_else(|| "Unable to resolve a writable local updates directory.".to_string())
 }
 
@@ -445,7 +451,7 @@ fn winget_upgrade_command(pid: u32, target: &str, working_dir: &str) -> String {
             "$exitCode = $LASTEXITCODE; ",
             "if ($exitCode -eq 0) {{ ",
             "Start-Sleep -Seconds 2; ",
-            "Start-Process -FilePath $target -WorkingDirectory $workingDir; ",
+            "Start-Process -FilePath $target -WorkingDirectory $workingDir -WindowStyle Hidden; ",
             "exit 0 ",
             "}}; ",
             "Write-Host ''; ",
@@ -477,7 +483,7 @@ fn ensure_target_location_writable(target: &Path) -> Result<(), String> {
         "Unable to determine the install directory for the current executable.".to_string()
     })?;
 
-    let probe_path = parent.join(".__codex_usage_update_probe");
+    let probe_path = parent.join(".__cybersouls_taskbar_quota_hud_update_probe");
     match File::create(&probe_path) {
         Ok(_) => {
             let _ = std::fs::remove_file(&probe_path);
@@ -513,8 +519,18 @@ fn is_winget_install_path(path: &Path) -> bool {
     let normalized_path = normalize_path(path);
     winget_install_roots()
         .into_iter()
-        .map(|root| normalize_path(&root))
-        .any(|root| normalized_path.starts_with(&root))
+        .any(|root| is_fork_winget_package_path(&normalized_path, &root))
+}
+
+fn is_fork_winget_package_path(normalized_path: &str, root: &Path) -> bool {
+    let prefix = format!(
+        "{}\\{}_",
+        normalize_path(root),
+        WINGET_PACKAGE_ID.to_ascii_lowercase()
+    );
+    normalized_path
+        .strip_prefix(&prefix)
+        .is_some_and(|suffix| suffix.contains('\\'))
 }
 
 fn winget_install_roots() -> Vec<PathBuf> {
@@ -611,10 +627,49 @@ mod tests {
     }
 
     #[test]
+    fn fork_update_metadata_and_numeric_versions_are_consistent() {
+        assert_eq!(
+            github_repo().unwrap(),
+            ("Shaninjah", "cybersouls-taskbar-quota-hud")
+        );
+        assert_eq!(RELEASE_ASSET_NAME, "cybersouls-taskbar-quota-hud.exe");
+        assert_eq!(
+            CHECKSUM_ASSET_NAME,
+            "cybersouls-taskbar-quota-hud.exe.sha256"
+        );
+        assert!(is_version_newer("1.9.2", "1.9.1"));
+        assert!(!is_version_newer("1.9.2", "1.9.2"));
+        assert!(is_version_newer("1.10.0", "1.9.2"));
+    }
+
+    #[test]
+    fn winget_detection_never_routes_fork_updates_to_upstream_package() {
+        let root = Path::new(r"C:\Packages");
+        assert!(is_fork_winget_package_path(
+            &normalize_path(Path::new(
+                r"C:\Packages\Cybersouls.TaskbarQuotaHUD_Microsoft.Winget.Source\cybersouls-taskbar-quota-hud.exe"
+            )),
+            root
+        ));
+        assert!(!is_fork_winget_package_path(
+            &normalize_path(Path::new(
+                r"C:\Packages\Ray.CodexUsage_Microsoft.Winget.Source\cybersouls-taskbar-quota-hud.exe"
+            )),
+            root
+        ));
+        assert!(!is_fork_winget_package_path(
+            &normalize_path(Path::new(
+                r"C:\Packages-other\Cybersouls.TaskbarQuotaHUD_Microsoft.Winget.Source\cybersouls-taskbar-quota-hud.exe"
+            )),
+            root
+        ));
+    }
+
+    #[test]
     fn parses_release_checksum_with_filename() {
         let hash = "75761c6dff9c833d0a6b7a09992ce53bd417cf4a5234c065e06b1968171e2222";
         assert_eq!(
-            parse_release_checksum(&format!("{hash}  codex-usage.exe\n")).unwrap(),
+            parse_release_checksum(&format!("{hash}  cybersouls-taskbar-quota-hud.exe\n")).unwrap(),
             hash.to_ascii_uppercase()
         );
         assert!(parse_release_checksum("not-a-checksum").is_err());
@@ -624,7 +679,7 @@ mod tests {
     fn replacement_keeps_backup_until_relaunch_is_committed() {
         let directory = test_directory("rollback");
         std::fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("codex-usage.exe");
+        let target = directory.join("cybersouls-taskbar-quota-hud.exe");
         let source = directory.join("download.exe");
         std::fs::write(&target, b"old-version").unwrap();
         std::fs::write(&source, b"new-version").unwrap();
@@ -646,7 +701,7 @@ mod tests {
     fn failed_relaunch_restores_previous_target() {
         let directory = test_directory("failed-relaunch");
         std::fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("codex-usage.exe");
+        let target = directory.join("cybersouls-taskbar-quota-hud.exe");
         let source = directory.join("download.exe");
         std::fs::write(&target, b"known-good-version").unwrap();
         std::fs::write(&source, b"not-a-windows-executable").unwrap();

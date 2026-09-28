@@ -3,7 +3,7 @@ use super::Strings;
 pub(super) const UPDATE_VIA_WINGET_LABEL: &str = "通过 WinGet 更新";
 
 pub(super) const STRINGS: Strings = Strings {
-    window_title: "Codex Usage",
+    window_title: "Cybersouls Taskbar Quota HUD",
     refresh: "立即刷新",
     update_frequency: "刷新频率",
     one_minute: "1 分钟",
@@ -46,6 +46,6 @@ pub(super) const STRINGS: Strings = Strings {
     codex_token_expired_body: "请在终端中运行 'codex' 并按提示重新登录。完成后请刷新或重启本工具。",
     antigravity_token_expired_title: "Antigravity 登录已失效",
     antigravity_token_expired_body: "请打开 Antigravity 并重新登录。完成后请刷新或重启本工具。",
-    codex_window_title: "Codex 用量监控",
+    codex_window_title: "Cybersouls Taskbar Quota HUD",
     antigravity_window_title: "Antigravity 用量监控",
 };

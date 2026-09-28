@@ -726,7 +726,7 @@ fn tray_icon_data_from_state() -> Option<tray_icon::TrayIconData> {
                 tooltip: if services.is_empty() {
                     strings.window_title.to_string()
                 } else {
-                    services.join("\n")
+                    format!("{}\n{}", strings.window_title, services.join("\n"))
                 },
             })
         }
@@ -1250,7 +1250,9 @@ fn is_startup_enabled() -> bool {
     let Some(current_exe) = current_exe_path_string() else {
         return false;
     };
-    reg_value.eq_ignore_ascii_case(&current_exe)
+    reg_value
+        .trim_matches('"')
+        .eq_ignore_ascii_case(&current_exe)
 }
 
 fn current_exe_path_string() -> Option<String> {
@@ -1382,15 +1384,16 @@ fn set_startup_enabled(enable: bool) {
             let mut exe_buf = [0u16; 260];
             let len = GetModuleFileNameW(None, &mut exe_buf) as usize;
             if len > 0 {
-                // Write the wide string including null terminator
-                let byte_len = ((len + 1) * 2) as u32;
+                let path = String::from_utf16_lossy(&exe_buf[..len]);
+                let command = native_interop::wide_str(&format!("\"{path}\""));
+                let byte_len = (command.len() * 2) as u32;
                 let _ = RegSetValueExW(
                     hkey,
                     PCWSTR::from_raw(key_name.as_ptr()),
                     0,
                     REG_SZ,
                     Some(std::slice::from_raw_parts(
-                        exe_buf.as_ptr() as *const u8,
+                        command.as_ptr() as *const u8,
                         byte_len as usize,
                     )),
                 );
@@ -3310,6 +3313,14 @@ fn show_context_menu(hwnd: HWND) {
         };
 
         let menu = CreatePopupMenu().unwrap();
+        let app_title = native_interop::wide_str(strings.window_title);
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING | MF_DISABLED,
+            0,
+            PCWSTR::from_raw(app_title.as_ptr()),
+        );
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
 
         let refresh_str = native_interop::wide_str(strings.refresh);
         let _ = AppendMenuW(

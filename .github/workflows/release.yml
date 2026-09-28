@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  RELEASE_ASSET_NAME: codex-usage.exe
+  RELEASE_ASSET_NAME: cybersouls-taskbar-quota-hud.exe
 
 jobs:
   build:
@@ -21,26 +21,38 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Validate release version and code
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match Cargo.toml version' }
+          cargo fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Prepare release assets
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target/release/codex-usage.exe dist/codex-usage.exe
+          Copy-Item target/release/cybersouls-taskbar-quota-hud.exe dist/cybersouls-taskbar-quota-hud.exe
           Copy-Item scripts/install.ps1 dist/install.ps1
           Copy-Item scripts/uninstall.ps1 dist/uninstall.ps1
 
-          $hash = (Get-FileHash -Algorithm SHA256 dist/codex-usage.exe).Hash.ToLowerInvariant()
-          "$hash  codex-usage.exe" | Set-Content -Encoding ascii dist/codex-usage.exe.sha256
+          $hash = (Get-FileHash -Algorithm SHA256 dist/cybersouls-taskbar-quota-hud.exe).Hash.ToLowerInvariant()
+          "$hash  cybersouls-taskbar-quota-hud.exe" | Set-Content -Encoding ascii dist/cybersouls-taskbar-quota-hud.exe.sha256
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/codex-usage.exe
-            dist/codex-usage.exe.sha256
+            dist/cybersouls-taskbar-quota-hud.exe
+            dist/cybersouls-taskbar-quota-hud.exe.sha256
             dist/install.ps1
             dist/uninstall.ps1
           generate_release_notes: true

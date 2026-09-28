@@ -11,15 +11,18 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Repository = 'upstream-ray/codex-usage-monitor'
-$InstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\CodexUsage'
-$TargetPath = Join-Path $InstallDirectory 'codex-usage.exe'
+$Repository = 'Shaninjah/cybersouls-taskbar-quota-hud'
+$InstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\CybersoulsTaskbarQuotaHUD'
+$TargetPath = Join-Path $InstallDirectory 'cybersouls-taskbar-quota-hud.exe'
 $InstalledUninstaller = Join-Path $InstallDirectory 'uninstall.ps1'
-$ShortcutPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex Usage.lnk'
-$DesktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex Usage.lnk'
-$UninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexUsage'
+$ShortcutPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Cybersouls Taskbar Quota HUD.lnk'
+$DesktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Cybersouls Taskbar Quota HUD.lnk'
+$UninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CybersoulsTaskbarQuotaHUD'
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$TempDirectory = Join-Path ([IO.Path]::GetTempPath()) ('codex-usage-install-' + [Guid]::NewGuid().ToString('N'))
+$TempDirectory = Join-Path ([IO.Path]::GetTempPath()) ('cybersouls-taskbar-quota-hud-install-' + [Guid]::NewGuid().ToString('N'))
+$LegacyDirectory = Join-Path $env:LOCALAPPDATA 'Programs\CodexUsage'
+$LegacyExecutable = Join-Path $LegacyDirectory 'codex-usage.exe'
+$OriginalBackup = Join-Path $LegacyDirectory 'codex-usage.original.exe'
 
 $StartupWasEnabled = $false
 $ExistingStartup = $null
@@ -52,13 +55,13 @@ function Invoke-ReleaseDownload {
         [Parameter(Mandatory = $true)][string]$Destination
     )
 
-    Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent' = 'CodexUsage-Installer' } -Uri $Url -OutFile $Destination
+    Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent' = 'CybersoulsTaskbarQuotaHUD-Installer' } -Uri $Url -OutFile $Destination
 }
 
 New-Item -ItemType Directory -Force -Path $TempDirectory | Out-Null
 
 try {
-    $StagedExecutable = Join-Path $TempDirectory 'codex-usage.exe'
+    $StagedExecutable = Join-Path $TempDirectory 'cybersouls-taskbar-quota-hud.exe'
     $StagedUninstaller = Join-Path $TempDirectory 'uninstall.ps1'
 
     if ($SourcePath) {
@@ -79,11 +82,11 @@ try {
             "https://api.github.com/repos/$Repository/releases/latest"
         }
 
-        $Release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'CodexUsage-Installer' } -Uri $ApiUrl
-        $ExecutableUrl = Get-ReleaseAsset -Release $Release -Name 'codex-usage.exe'
-        $ChecksumUrl = Get-ReleaseAsset -Release $Release -Name 'codex-usage.exe.sha256'
+        $Release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'CybersoulsTaskbarQuotaHUD-Installer' } -Uri $ApiUrl
+        $ExecutableUrl = Get-ReleaseAsset -Release $Release -Name 'cybersouls-taskbar-quota-hud.exe'
+        $ChecksumUrl = Get-ReleaseAsset -Release $Release -Name 'cybersouls-taskbar-quota-hud.exe.sha256'
         $UninstallerUrl = Get-ReleaseAsset -Release $Release -Name 'uninstall.ps1'
-        $ChecksumPath = Join-Path $TempDirectory 'codex-usage.exe.sha256'
+        $ChecksumPath = Join-Path $TempDirectory 'cybersouls-taskbar-quota-hud.exe.sha256'
 
         Invoke-ReleaseDownload -Url $ExecutableUrl -Destination $StagedExecutable
         Invoke-ReleaseDownload -Url $ChecksumUrl -Destination $ChecksumPath
@@ -103,7 +106,18 @@ try {
 
     New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
 
-    Get-CimInstance Win32_Process -Filter "Name='codex-usage.exe'" -ErrorAction SilentlyContinue |
+    # Preserve the original installation before stopping or migrating it.
+    # Never overwrite or remove this permanent backup on later installations.
+    if (Test-Path -LiteralPath $LegacyExecutable -PathType Leaf) {
+        if (-not (Test-Path -LiteralPath $OriginalBackup -PathType Leaf)) {
+            Copy-Item -LiteralPath $LegacyExecutable -Destination $OriginalBackup
+        }
+        Get-CimInstance Win32_Process -Filter "Name='codex-usage.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.ExecutablePath -eq $LegacyExecutable } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+    }
+
+    Get-CimInstance Win32_Process -Filter "Name='cybersouls-taskbar-quota-hud.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.ExecutablePath -eq $TargetPath } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
@@ -138,9 +152,9 @@ try {
 
         New-Item -Path $UninstallKey -Force | Out-Null
         $UninstallCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$InstalledUninstaller`""
-        Set-ItemProperty -Path $UninstallKey -Name DisplayName -Value 'Codex Usage'
+        Set-ItemProperty -Path $UninstallKey -Name DisplayName -Value 'Cybersouls Taskbar Quota HUD'
         Set-ItemProperty -Path $UninstallKey -Name DisplayVersion -Value $InstalledVersion
-        Set-ItemProperty -Path $UninstallKey -Name Publisher -Value 'Ray'
+        Set-ItemProperty -Path $UninstallKey -Name Publisher -Value 'Cybersouls'
         Set-ItemProperty -Path $UninstallKey -Name DisplayIcon -Value $TargetPath
         Set-ItemProperty -Path $UninstallKey -Name InstallLocation -Value $InstallDirectory
         Set-ItemProperty -Path $UninstallKey -Name URLInfoAbout -Value "https://github.com/$Repository"
@@ -150,7 +164,7 @@ try {
         Set-ItemProperty -Path $UninstallKey -Name NoRepair -Type DWord -Value 1
 
         if ($StartupWasEnabled) {
-            Set-ItemProperty -Path $RunKey -Name 'CodexUsage' -Value $TargetPath
+            Set-ItemProperty -Path $RunKey -Name 'CodexUsage' -Value ('"' + $TargetPath + '"')
         }
 
         $Shell = New-Object -ComObject WScript.Shell
@@ -161,7 +175,7 @@ try {
             $Shortcut.TargetPath = $TargetPath
             $Shortcut.WorkingDirectory = $InstallDirectory
             $Shortcut.IconLocation = "$TargetPath,0"
-            $Shortcut.Description = 'Codex Usage'
+            $Shortcut.Description = 'Cybersouls Taskbar Quota HUD'
             $Shortcut.Save()
         }
 
@@ -185,11 +199,40 @@ try {
 
     Remove-Item -LiteralPath $BackupPath -Force -ErrorAction SilentlyContinue
 
+    # Retire only the known upstream installation after the fork is installed.
+    # Keep the original EXE backup and all shared settings for rollback.
+    if (Test-Path -LiteralPath $LegacyExecutable -PathType Leaf) {
+        $RetiredExecutable = Join-Path $LegacyDirectory ('codex-usage.retired-' + [Guid]::NewGuid().ToString('N') + '.exe')
+        Move-Item -LiteralPath $LegacyExecutable -Destination $RetiredExecutable
+        $LegacyUninstaller = Join-Path $LegacyDirectory 'uninstall.ps1'
+        if (Test-Path -LiteralPath $LegacyUninstaller -PathType Leaf) {
+            Move-Item -LiteralPath $LegacyUninstaller -Destination (Join-Path $LegacyDirectory ('uninstall.original-' + [Guid]::NewGuid().ToString('N') + '.ps1'))
+        }
+        $LegacyUninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexUsage'
+        if (Test-Path -LiteralPath $LegacyUninstallKey) {
+            $LegacyLocation = Get-ItemPropertyValue -Path $LegacyUninstallKey -Name InstallLocation -ErrorAction SilentlyContinue
+            if ($LegacyLocation -eq $LegacyDirectory) {
+                Remove-Item -LiteralPath $LegacyUninstallKey -Recurse -Force
+            }
+        }
+        foreach ($LegacyLink in @(
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex Usage.lnk'),
+            (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex Usage.lnk')
+        )) {
+            if (Test-Path -LiteralPath $LegacyLink -PathType Leaf) {
+                $OldShortcut = $Shell.CreateShortcut($LegacyLink)
+                if ($OldShortcut.TargetPath -eq $LegacyExecutable) {
+                    Remove-Item -LiteralPath $LegacyLink -Force
+                }
+            }
+        }
+    }
+
     if (-not $NoLaunch) {
         Start-Process -FilePath $TargetPath -WorkingDirectory $InstallDirectory -WindowStyle Hidden
     }
 
-    Write-Output "Codex Usage $InstalledVersion installed to $InstallDirectory"
+    Write-Output "Cybersouls Taskbar Quota HUD $InstalledVersion installed to $InstallDirectory"
     Write-Output "SHA256: $ActualSha256"
 }
 finally {

@@ -1,20 +1,20 @@
 [package]
-name = "codex-usage"
-version = "1.9.1"
+name = "cybersouls-taskbar-quota-hud"
+version = "1.9.2"
 edition = "2021"
 license = "MIT"
-description = "Codex Usage"
-homepage = "https://github.com/upstream-ray/codex-usage-monitor"
-repository = "https://github.com/upstream-ray/codex-usage-monitor"
+description = "AI quota monitoring directly in your Windows taskbar."
+homepage = "https://github.com/Shaninjah/cybersouls-taskbar-quota-hud"
+repository = "https://github.com/Shaninjah/cybersouls-taskbar-quota-hud"
 
 [package.metadata.winres]
-CompanyName = "Ray"
-ProductName = "Codex Usage"
-FileDescription = "Lightweight Codex usage monitor for Windows"
-OriginalFilename = "codex-usage.exe"
-InternalName = "CodexUsage"
+CompanyName = "Cybersouls"
+ProductName = "Cybersouls Taskbar Quota HUD"
+FileDescription = "Cybersouls Taskbar Quota HUD"
+OriginalFilename = "cybersouls-taskbar-quota-hud.exe"
+InternalName = "cybersouls-taskbar-quota-hud"
 Comments = "Derived from Claude Code Usage Monitor under the MIT License"
-LegalCopyright = "Original copyright (C) 2026 Code Zeno Pty Ltd; modifications (C) 2026 Ray"
+LegalCopyright = "Original copyright (C) 2026 Code Zeno Pty Ltd; modifications (C) 2026 Ray; fork modifications (C) 2026 Cybersouls"
 
 [dependencies]
 ureq = { version = "2", default-features = false, features = ["native-tls", "json", "proxy-from-env"] }
