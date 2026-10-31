@@ -1,0 +1,23 @@
+name: cybersouls-quota-hud
+
+services:
+  dev:
+    platform: linux/amd64
+    image: cybersouls-quota-hud-dev:local
+    build: .
+    init: true
+    cpus: 2
+    mem_limit: 3g
+    network_mode: bridge
+    environment:
+      CARGO_BUILD_JOBS: "2"
+    volumes:
+      - .:/workspace
+      - rust-target:/build
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+
+volumes:
+  rust-target:
+  cargo-registry:
+  cargo-git:

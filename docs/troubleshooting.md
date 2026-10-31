@@ -14,6 +14,14 @@ Cybersouls Taskbar Quota HUD keeps authentication failures separate from transie
 
 Authentication failures pause provider polling until the credential source changes, preventing repeated login notifications. Transient failures use exponential backoff up to the configured refresh interval.
 
+For Antigravity, the monitor first tries to renew an expired OAuth access token
+using the stored refresh token. An authentication rejection can trigger one
+renewal and one retry. Network failures, HTTP 429, and server errors remain
+retryable; they do not force sign-in. If `!` persists, open Antigravity, sign in
+again if requested, and manually refresh the widget. Renewal also requires a
+supported Antigravity or agy installation to supply OAuth client metadata.
+See [Antigravity authentication recovery](antigravity-auth-refresh.md).
+
 ## Diagnostic log
 
 Run:

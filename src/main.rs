@@ -14,6 +14,37 @@ mod window;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--check-antigravity") {
+        if args.iter().any(|arg| arg == "--diagnose") {
+            let _ = diagnose::init();
+        }
+        // One provider only, without loading settings or starting the taskbar UI.
+        // The report deliberately contains no credentials or raw HTTP errors.
+        let (code, report) = match poller::poll(false, false, true) {
+            Ok(data) => match data.antigravity {
+                Some(usage) => (
+                    0,
+                    serde_json::json!({
+                        "status": "ok",
+                        "session_used_percent": usage.session.percentage,
+                        "weekly_used_percent": usage.weekly.percentage,
+                        "session_reset_known": usage.session.resets_at.is_some(),
+                        "weekly_reset_known": usage.weekly.resets_at.is_some(),
+                    }),
+                ),
+                None => (
+                    1,
+                    serde_json::json!({"status":"error", "category":"invalid_response"}),
+                ),
+            },
+            Err(error) => (
+                1,
+                serde_json::json!({"status":"error", "category":error.category()}),
+            ),
+        };
+        println!("{report}");
+        std::process::exit(code);
+    }
     let diagnose_enabled = args.iter().any(|arg| arg == "--diagnose");
     if diagnose_enabled {
         match diagnose::init() {

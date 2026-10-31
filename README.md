@@ -48,14 +48,14 @@ This is a comparison with a theoretical linear budget, not a prediction based on
 
 ## Quota display
 
-Right-click the widget or tray icon and choose **Quota display → Remaining quota / Used quota**. The radio selection applies to both Codex rows (5h and 7d), in every language:
+Right-click the widget or tray icon and choose **Quota display → Remaining quota / Used quota**. The radio selection applies to both rows (5h and 7d) of every enabled provider: Codex, Claude Code, and Antigravity, in every language.
 
 - **Remaining quota** (default): the bar and number show `100 - used`. A full quota is a full bar, which empties as quota is used.
 - **Used quota**: the bar and number show the percentage used, preserving the historical used-quota display.
 
-For 20% used, Remaining shows **80%** with an 80% bar; Used shows **20%** with a 20% bar. Both use the same pace color based on remaining quota and reset time. For 90% used, the values are **10%** and **90%**, respectively, again with the same pace color. Switching modes updates cached display data immediately without fetching quotas. Reset counters and display rounding remain unchanged.
+For 20% used, Remaining shows **80%** with an 80% bar; Used shows **20%** with a 20% bar. Codex's pace colors remain based on remaining quota and reset time in either mode; Claude Code and Antigravity retain their provider colors. Switching modes updates cached percentages, bars, and tray tooltips immediately without fetching quotas. Reset counters, display rounding, and low-quota alerts remain unchanged.
 
-The setting `"quota_display_mode": "remaining"` or `"used"` is saved in the existing `%APPDATA%\CodexUsage\settings.json`. Missing or invalid values default safely to `remaining`, including older settings files, while retaining other preferences. Language chooses text/layout, not the Codex display mode; Simplified Chinese keeps its compact reset times with the appropriate remaining/used label. This setting affects Codex only; Claude Code and Antigravity keep their historical display behavior.
+The setting `"quota_display_mode": "remaining"` or `"used"` is saved in the existing `%APPDATA%\CodexUsage\settings.json`. Missing or invalid values default safely to `remaining`, including older settings files, while retaining other preferences. Language chooses text/layout, not the display mode; Simplified Chinese keeps its compact reset times with the appropriate remaining/used label. Since local version 1.9.5, this existing setting also controls Claude Code and Antigravity.
 
 ## Fork version and branding
 
@@ -127,6 +127,9 @@ cargo build --release
 For an executable you plan to share, use `./scripts/build-release.ps1` instead. It runs `cargo build --release --locked` with dynamic source-path remapping to keep your personal build paths out of the EXE. CI and release use the same helper.
 
 Local builds create the executable at `target\release\cybersouls-taskbar-quota-hud.exe`.
+
+For a Docker Desktop development environment with Windows cross-compilation and
+unit tests under Wine, see [Docker development](docs/docker-development.md).
 
 ## Uninstall
 
@@ -224,6 +227,7 @@ What the app reads:
 - If needed, the same credentials file inside an installed WSL distro
 - If Codex is enabled, your local Codex credentials from `$CODEX_HOME/auth.json` or `~/.codex/auth.json`
 - If Antigravity is enabled, your local Antigravity OAuth token from Windows Credential Manager target `gemini:antigravity`
+- For Antigravity token renewal, OAuth client metadata from the installed Antigravity or agy executable
 
 What the app sends over the network:
 
@@ -231,7 +235,7 @@ What the app sends over the network:
 |---|---|---|
 | Codex | `chatgpt.com` | Read `/backend-api/wham/usage` using the local OAuth bearer token and, when present, account ID. |
 | Claude Code | `api.anthropic.com` | Read `/api/oauth/usage`; `/v1/messages` is a minimal generation fallback for rate-limit headers. Both use the local OAuth bearer token. |
-| Antigravity | `daily-cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`, `cloudcode-pa.googleapis.com` | Query the existing Cloud Code quota/project/model endpoints using the local OAuth bearer token. |
+| Antigravity | `daily-cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`, `cloudcode-pa.googleapis.com`, `oauth2.googleapis.com` | Read Cloud Code quotas with the local OAuth bearer token; when necessary, send the refresh token directly to Google's OAuth endpoint for a replacement access token. |
 | Updates | `api.github.com`, `github.com`, GitHub's release-download CDN | Manual and scheduled checks, plus downloads from this fork. No provider OAuth credential is attached. |
 
 The monitor's HTTP agents require HTTPS and use normal operating-system certificate validation. `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and their lowercase forms may route these requests through a configured proxy. A tunneling proxy normally relays encrypted HTTPS; a proxy that terminates TLS using a certificate trusted by your system can inspect authenticated traffic. Use a proxy you trust.
@@ -261,7 +265,7 @@ Notes:
 
 - Local Claude credentials may also be probed to determine CLI availability. Credentials are read into temporary in-memory strings; the monitor does not create a new persistent credential store.
 - If your Claude or Codex token expires, existing refresh routines may launch the local CLI with a minimal `.` prompt. These CLIs follow their own settings and may make generation requests. The Claude Messages fallback can also consume a small amount of quota. Ordinary Codex quota GET requests and local color repainting do not submit a generation prompt. Credential updates are handled by the provider CLI, not by writing tokens into the monitor's settings.
-- If your Antigravity token is expired, open Antigravity and sign in again. The monitor does not write Windows Credential Manager entries itself.
+- Antigravity access tokens are refreshed in memory when expired or within 60 seconds of expiry, or once after an authentication rejection. OAuth client metadata is read from the installed Antigravity/agy executable. The monitor does not write Windows Credential Manager entries itself. If renewal is rejected or no supported client metadata is available, sign in again through Antigravity. See [Antigravity authentication recovery](docs/antigravity-auth-refresh.md).
 - Portable installs can update themselves by downloading the latest release from this repository
 - Diagnostics can contain local paths, distro names, timestamps and quota values. Review/redact them before attaching an issue; never attach credential files. Report problems through [GitHub Issues](https://github.com/Shaninjah/cybersouls-taskbar-quota-hud/issues).
 

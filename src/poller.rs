@@ -14,14 +14,19 @@ use crate::localization::Strings;
 use crate::models::{AppUsageData, UsageData, UsageSection};
 use crate::native_interop;
 
+mod antigravity_auth;
+
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
 const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 const ANTIGRAVITY_CREDENTIAL_TARGET: &str = "gemini:antigravity";
+// Match the original project's quota client: the generic UA can return only
+// the Claude/GPT pool, omitting the Gemini quotas used by this widget.
+const ANTIGRAVITY_USER_AGENT: &str = "antigravity/cli/1.4.0";
 const ANTIGRAVITY_ENDPOINTS: &[&str] = &[
     "https://daily-cloudcode-pa.googleapis.com",
-    "https://daily-cloudcode-pa.sandbox.googleapis.com",
     "https://cloudcode-pa.googleapis.com",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com",
 ];
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -111,16 +116,6 @@ struct CodexRateLimitWindow {
 const CODEX_SESSION_WINDOW_MAX_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Deserialize)]
-struct AntigravityAuthFile {
-    token: AntigravityTokenData,
-}
-
-#[derive(Deserialize)]
-struct AntigravityTokenData {
-    access_token: String,
-}
-
-#[derive(Deserialize)]
 struct AntigravityLoadResponse {
     #[serde(rename = "cloudaicompanionProject")]
     project: Option<String>,
@@ -187,7 +182,7 @@ struct CredentialW {
     user_name: *mut u16,
 }
 
-#[link(name = "Advapi32")]
+#[link(name = "advapi32")]
 extern "system" {
     fn CredReadW(
         target_name: *const u16,
@@ -309,15 +304,7 @@ fn poll_codex() -> Result<UsageData, PollError> {
 }
 
 fn poll_antigravity() -> Result<UsageData, PollError> {
-    let creds = match read_antigravity_credentials() {
-        Some(creds) => creds,
-        None => {
-            diagnose::log("Antigravity usage poll failed: no Antigravity credentials found");
-            return Err(PollError::NoCredentials);
-        }
-    };
-
-    fetch_antigravity_usage(&creds.access_token)
+    antigravity_auth::poll()
 }
 
 fn refresh_or_fallback(mut creds: Credentials) -> Result<Credentials, PollError> {
@@ -976,16 +963,24 @@ fn antigravity_credential_watch_signature() -> String {
 fn fetch_antigravity_usage(token: &str) -> Result<UsageData, PollError> {
     let mut auth_error = false;
     let mut last_error = PollError::RequestFailed;
+    let inspect_endpoints =
+        diagnose::is_enabled() && std::env::args().any(|arg| arg == "--check-antigravity");
+    let mut first_success = None;
 
     for base_url in ANTIGRAVITY_ENDPOINTS {
         match fetch_antigravity_usage_from_endpoint(base_url, token) {
+            Ok(data) if inspect_endpoints => {
+                first_success.get_or_insert(data);
+            }
             Ok(data) => return Ok(data),
             Err(PollError::AuthRequired) => auth_error = true,
             Err(error) => last_error = error,
         }
     }
 
-    if auth_error {
+    if let Some(data) = first_success {
+        Ok(data)
+    } else if auth_error {
         Err(PollError::AuthRequired)
     } else {
         Err(last_error)
@@ -1025,7 +1020,7 @@ fn fetch_antigravity_project(base_url: &str, token: &str) -> Result<Option<Strin
         .post(&format!("{base_url}/v1internal:loadCodeAssist"))
         .set("Authorization", &format!("Bearer {token}"))
         .set("Content-Type", "application/json")
-        .set("User-Agent", "antigravity")
+        .set("User-Agent", ANTIGRAVITY_USER_AGENT)
         .send_json(&body)
     {
         Ok(resp) => resp,
@@ -1065,7 +1060,7 @@ fn fetch_antigravity_model_quota(
         .post(&format!("{base_url}/v1internal:fetchAvailableModels"))
         .set("Authorization", &format!("Bearer {token}"))
         .set("Content-Type", "application/json")
-        .set("User-Agent", "antigravity")
+        .set("User-Agent", ANTIGRAVITY_USER_AGENT)
         .send_json(&body)
     {
         Ok(resp) => resp,
@@ -1087,6 +1082,10 @@ fn fetch_antigravity_model_quota(
         }
     };
 
+    antigravity_section_from_models(response).ok_or(PollError::RequestFailed)
+}
+
+fn antigravity_section_from_models(response: AntigravityModelsResponse) -> Option<UsageSection> {
     best_antigravity_section(response.models.into_iter().filter_map(|(model, info)| {
         let quota = info.quota_info?;
         if !is_antigravity_display_model(&model) {
@@ -1094,7 +1093,6 @@ fn fetch_antigravity_model_quota(
         }
         antigravity_section_from_quota(quota)
     }))
-    .ok_or(PollError::RequestFailed)
 }
 
 fn fetch_antigravity_quota_summary(
@@ -1109,7 +1107,7 @@ fn fetch_antigravity_quota_summary(
         .post(&format!("{base_url}/v1internal:retrieveUserQuotaSummary"))
         .set("Authorization", &format!("Bearer {token}"))
         .set("Content-Type", "application/json")
-        .set("User-Agent", "antigravity")
+        .set("User-Agent", ANTIGRAVITY_USER_AGENT)
         .send_json(&body)
     {
         Ok(resp) => resp,
@@ -1131,6 +1129,33 @@ fn fetch_antigravity_quota_summary(
         }
     };
 
+    if diagnose::is_enabled() {
+        let groups: Vec<_> = response
+            .groups
+            .iter()
+            .flatten()
+            .map(|group| {
+                let buckets: Vec<_> = group
+                    .buckets
+                    .iter()
+                    .flatten()
+                    .map(|bucket| {
+                        serde_json::json!({
+                            "id": bucket.bucket_id,
+                            "window": bucket.window,
+                            "remaining_fraction": bucket.remaining_fraction,
+                            "reset_time": bucket.reset_time,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({"name":group.display_name,"buckets":buckets})
+            })
+            .collect();
+        diagnose::log(format!(
+            "Antigravity summary {}",
+            serde_json::json!({"endpoint":base_url,"groups":groups})
+        ));
+    }
     antigravity_usage_from_summary(response).ok_or(PollError::RequestFailed)
 }
 
@@ -1153,8 +1178,6 @@ fn antigravity_section_from_summary_bucket(
 }
 
 fn antigravity_usage_from_summary(response: AntigravityQuotaSummaryResponse) -> Option<UsageData> {
-    let mut fallback = None;
-
     for group in response.groups.unwrap_or_default() {
         let is_gemini = is_antigravity_gemini_summary_group(&group);
         let usage = antigravity_usage_from_summary_group(group);
@@ -1162,13 +1185,9 @@ fn antigravity_usage_from_summary(response: AntigravityQuotaSummaryResponse) -> 
         if is_gemini && usage.is_some() {
             return usage;
         }
-
-        if fallback.is_none() {
-            fallback = usage;
-        }
     }
-
-    fallback
+    // A different pool must never stand in for a missing Gemini quota.
+    None
 }
 
 fn antigravity_usage_from_summary_group(group: AntigravityQuotaSummaryGroup) -> Option<UsageData> {
@@ -1197,6 +1216,18 @@ fn antigravity_usage_from_summary_group(group: AntigravityQuotaSummaryGroup) -> 
 }
 
 fn is_antigravity_gemini_summary_group(group: &AntigravityQuotaSummaryGroup) -> bool {
+    // Gemini 4 Argon has a separate quota pool despite sharing the Gemini name.
+    let is_argon = |value: Option<&str>| {
+        value.is_some_and(|value| value.to_ascii_lowercase().contains("argon"))
+    };
+    if is_argon(group.display_name.as_deref())
+        || is_argon(group.description.as_deref())
+        || group.buckets.iter().flatten().any(|bucket| {
+            is_argon(bucket.bucket_id.as_deref()) || is_argon(bucket.display_name.as_deref())
+        })
+    {
+        return false;
+    }
     group
         .display_name
         .as_deref()
@@ -1232,11 +1263,7 @@ where
 }
 
 fn is_antigravity_display_model(model: &str) -> bool {
-    model.starts_with("gemini")
-        || model.starts_with("claude")
-        || model.starts_with("gpt")
-        || model.starts_with("image")
-        || model.starts_with("imagen")
+    model.starts_with("gemini") && !model.to_ascii_lowercase().contains("argon")
 }
 
 fn get_header_f64(response: &ureq::Response, name: &str) -> f64 {
@@ -1342,16 +1369,6 @@ fn read_codex_credentials() -> Option<CodexTokenData> {
 
     let auth: CodexAuthFile = serde_json::from_str(&content).ok()?;
     auth.tokens.filter(|tokens| !tokens.access_token.is_empty())
-}
-
-fn read_antigravity_credentials() -> Option<AntigravityTokenData> {
-    let content = read_windows_generic_credential(ANTIGRAVITY_CREDENTIAL_TARGET)?;
-    let auth: AntigravityAuthFile = serde_json::from_str(&content).ok()?;
-    if auth.token.access_token.is_empty() {
-        None
-    } else {
-        Some(auth.token)
-    }
 }
 
 fn read_windows_generic_credential(target: &str) -> Option<String> {
@@ -1628,22 +1645,8 @@ fn is_leap(y: u64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }
 
-/// Format a usage section for the compact taskbar display.
-pub fn format_line(
-    section: &UsageSection,
-    strings: Strings,
-    show_remaining_in_chinese: bool,
-    window: UsageWindowKind,
-) -> String {
-    if show_remaining_in_chinese {
-        return format_simplified_chinese_line(section, window);
-    }
-
-    format_percentage_and_countdown(section.percentage, section.resets_at, strings)
-}
-
-/// Codex formatting uses the explicit display mode; language only selects layout.
-pub fn format_codex_line(
+/// Every provider uses the selected display mode; language only selects layout.
+pub fn format_quota_line(
     section: &UsageSection,
     strings: Strings,
     mode: crate::quota_display::QuotaDisplayMode,
@@ -1677,14 +1680,6 @@ fn format_percentage_and_countdown(
     } else {
         format!("{pct} \u{00b7} {cd}")
     }
-}
-
-fn format_simplified_chinese_line(section: &UsageSection, window: UsageWindowKind) -> String {
-    let remaining = remaining_percentage(section.percentage);
-    let reset = section
-        .resets_at
-        .and_then(native_interop::system_time_to_local);
-    format_simplified_chinese_values(remaining, reset, window, true)
 }
 
 fn format_simplified_chinese_values(
@@ -1792,6 +1787,37 @@ pub fn app_is_past_reset(data: &AppUsageData) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quota_display_mode_converts_antigravity_values_without_changing_raw_usage() {
+        let section = UsageSection {
+            percentage: 10.0,
+            resets_at: None,
+        };
+        let strings = crate::localization::LanguageId::French.strings();
+        assert_eq!(
+            format_quota_line(
+                &section,
+                strings,
+                crate::quota_display::QuotaDisplayMode::Remaining,
+                false,
+                UsageWindowKind::Weekly
+            ),
+            "90%"
+        );
+        assert_eq!(
+            format_quota_line(
+                &section,
+                strings,
+                crate::quota_display::QuotaDisplayMode::Used,
+                false,
+                UsageWindowKind::Weekly
+            ),
+            "10%"
+        );
+        assert_eq!(section.percentage, 10.0);
+        assert!(section.resets_at.is_none());
+    }
 
     #[test]
     fn external_reset_dates_reject_invalid_ranges_without_panicking() {
@@ -1932,7 +1958,13 @@ mod tests {
             resets_at: None,
         };
         assert_eq!(
-            format_line(&section, strings, true, UsageWindowKind::Session),
+            format_quota_line(
+                &section,
+                strings,
+                crate::quota_display::QuotaDisplayMode::Remaining,
+                true,
+                UsageWindowKind::Session
+            ),
             "剩余70%"
         );
         let session_reset = windows::Win32::Foundation::SYSTEMTIME {
@@ -1988,7 +2020,7 @@ mod tests {
                         let chinese =
                             language == crate::localization::LanguageId::SimplifiedChinese;
                         let text =
-                            format_codex_line(&section, language.strings(), mode, chinese, window);
+                            format_quota_line(&section, language.strings(), mode, chinese, window);
                         let prefix = if !chinese {
                             ""
                         } else if mode == QuotaDisplayMode::Remaining {
@@ -2015,14 +2047,14 @@ mod tests {
             resets_at: Some(SystemTime::now() + Duration::from_secs(3600)),
         };
         let strings = crate::localization::LanguageId::French.strings();
-        let remaining = format_codex_line(
+        let remaining = format_quota_line(
             &section,
             strings,
             QuotaDisplayMode::Remaining,
             false,
             UsageWindowKind::Session,
         );
-        let used = format_codex_line(
+        let used = format_quota_line(
             &section,
             strings,
             QuotaDisplayMode::Used,
@@ -2197,5 +2229,81 @@ mod tests {
         assert!((usage.session.percentage - 4.17425).abs() < 0.000001);
         assert!(usage.weekly.resets_at.is_some());
         assert!(usage.session.resets_at.is_some());
+    }
+
+    #[test]
+    fn antigravity_does_not_show_external_or_argon_pools_as_unused_gemini() {
+        for groups in [
+            serde_json::json!([]),
+            serde_json::json!([{"displayName":"Claude and GPT models","buckets":[
+                {"bucketId":"3p-weekly","window":"weekly","remainingFraction":1.0}
+            ]}]),
+            serde_json::json!([{"displayName":"Gemini 4 Argon","buckets":[
+                {"bucketId":"gemini-4-argon-weekly","window":"weekly","remainingFraction":1.0}
+            ]}]),
+            serde_json::json!([{"displayName":"Unknown Models","buckets":[
+                {"window":"weekly","remainingFraction":1.0}
+            ]}]),
+        ] {
+            let response = serde_json::from_value(serde_json::json!({"groups":groups})).unwrap();
+            assert!(antigravity_usage_from_summary(response).is_none());
+        }
+    }
+
+    #[test]
+    fn antigravity_main_gemini_quota_is_independent_of_summary_group_order() {
+        let groups = [
+            serde_json::json!({"displayName":"Gemini 4 Argon","buckets":[
+                {"window":"weekly","remainingFraction":0.1}
+            ]}),
+            serde_json::json!({"displayName":"Claude and GPT models","buckets":[
+                {"window":"weekly","remainingFraction":1.0}
+            ]}),
+            serde_json::json!({"displayName":"Gemini Models","buckets":[
+                {"bucketId":"gemini-5h","window":"5h","remainingFraction":0.75,"resetTime":"2030-01-01T02:00:00Z"},
+                {"bucketId":"gemini-weekly","window":"weekly","remainingFraction":0.93,"resetTime":"2030-01-06T04:00:00Z"}
+            ]}),
+        ];
+        for order in [[0, 1, 2], [2, 0, 1], [1, 2, 0]] {
+            let ordered: Vec<_> = order
+                .into_iter()
+                .map(|index| groups[index].clone())
+                .collect();
+            let response = serde_json::from_value(serde_json::json!({"groups":ordered})).unwrap();
+            let usage = antigravity_usage_from_summary(response).unwrap();
+            assert!((usage.session.percentage - 25.0).abs() < 0.000001);
+            assert!((usage.weekly.percentage - 7.0).abs() < 0.000001);
+            assert_eq!(
+                usage.session.resets_at,
+                parse_iso8601(Some("2030-01-01T02:00:00Z"))
+            );
+            assert_eq!(
+                usage.weekly.resets_at,
+                parse_iso8601(Some("2030-01-06T04:00:00Z"))
+            );
+        }
+    }
+
+    #[test]
+    fn antigravity_model_fallback_cannot_mix_gemini_with_other_quota_pools() {
+        let response = serde_json::from_value(serde_json::json!({"models":{
+            "gemini-3.8-flash":{"quotaInfo":{"remainingFraction":0.75}},
+            "gemini-4-argon":{"quotaInfo":{"remainingFraction":0.01}},
+            "claude-sonnet":{"quotaInfo":{"remainingFraction":0.01}},
+            "gpt-model":{"quotaInfo":{"remainingFraction":0.01}}
+        }}))
+        .unwrap();
+        assert_eq!(
+            antigravity_section_from_models(response)
+                .unwrap()
+                .percentage,
+            25.0
+        );
+        let other_pools = serde_json::from_value(serde_json::json!({"models":{
+            "claude-sonnet":{"quotaInfo":{"remainingFraction":0.5}},
+            "gemini-4-argon":{"quotaInfo":{"remainingFraction":0.5}}
+        }}))
+        .unwrap();
+        assert!(antigravity_section_from_models(other_pools).is_none());
     }
 }

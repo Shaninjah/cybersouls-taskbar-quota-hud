@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "cybersouls-taskbar-quota-hud"
-version = "1.9.2"
+version = "1.9.5"
 dependencies = [
  "dirs",
  "native-tls",

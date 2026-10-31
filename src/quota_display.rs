@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::poller::remaining_percentage;
 
-/// One setting controls both Codex rows, independently of their language/colors.
+/// One setting controls every provider's rows, independently of language/colors.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum QuotaDisplayMode {
